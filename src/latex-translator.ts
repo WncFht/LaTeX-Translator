@@ -7,7 +7,7 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import config from 'config';
-import { parseLatexProject, ProjectAST, AstTypes } from 'ast-gen';
+import { parseLatexProject, ProjectAST, AstTypes, serializeProjectAstToJson } from 'ast-gen';
 import { Masker } from './masker';
 import { OpenAIClient, OpenAIConfig } from './openai-client';
 import { Replacer } from './replacer';
@@ -125,6 +125,10 @@ export class LaTeXTranslator {
       console.log('正在解析LaTeX文件...');
       this.originalAst = await this.parseLatex(inputPath);
       
+      // 1.1 保存AST为JSON文件
+      const astJsonPath = await this.saveAstAsJson(this.originalAst, inputPath);
+      
+      
       // 2. 掩码AST
       console.log('正在掩码AST...');
       const { maskedText, maskedNodesMap } = await this.masker.maskAst(this.originalAst);
@@ -172,6 +176,33 @@ export class LaTeXTranslator {
       console.error('解析LaTeX失败:', error);
       throw error;
     }
+  }
+  
+  /**
+   * 保存AST为JSON文件
+   * @param ast 项目AST
+   * @param originalPath 原始文件路径
+   * @returns 保存的JSON文件路径
+   */
+  private async saveAstAsJson(ast: ProjectAST, originalPath: string): Promise<string> {
+    // 创建输出目录
+    await fs.mkdir(this.options.outputDir, { recursive: true });
+    
+    // 确定输出文件名
+    const originalFileName = path.basename(originalPath, path.extname(originalPath));
+    const astJsonPath = path.join(
+      this.options.outputDir,
+      `${originalFileName}_ast.json`
+    );
+    
+    // 序列化AST为JSON
+    const jsonContent = serializeProjectAstToJson(ast, true); // true表示格式化JSON
+    
+    // 保存到文件
+    await fs.writeFile(astJsonPath, jsonContent, 'utf8');
+    
+    console.log(`AST已保存到: ${astJsonPath}`);
+    return astJsonPath;
   }
   
   /**

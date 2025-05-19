@@ -155,6 +155,7 @@ async function handleParseCommand(argv: any): Promise<void> {
       loadDefaultMacros: !(argv['no-default-macros'] as boolean)
     });
     
+    console.log(`AST已保存到: ${outputPath}`);
     console.log('处理完成！');
   } catch (error) {
     console.error('处理过程中出错:', error);

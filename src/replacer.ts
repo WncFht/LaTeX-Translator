@@ -174,6 +174,9 @@ export class Replacer {
         return 'content' in node && typeof node.content === 'string' ? 
           `%${node.content}\n` : '';
         
+      case 'whitespace':
+        return ' ';
+        
       default:
         // 处理非标准类型（如math.inline、math.display等）
         if (nodeType === 'math.inline') {
