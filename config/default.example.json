@@ -1,0 +1,24 @@
+{
+  "openai": {
+    "apiKey": "sk-your-api-key",
+    "baseUrl": "https://api.openai.com/v1",
+    "model": "gpt-3.5-turbo",
+    "temperature": 0.3,
+    "timeout": 60000
+  },
+  "translation": {
+    "defaultTargetLanguage": "简体中文",
+    "defaultSourceLanguage": "英文",
+    "maskOptions": {
+      "environments": ["equation", "align", "figure", "table", "algorithm"],
+      "commands": ["ref", "cite", "includegraphics", "url"],
+      "maskInlineMath": true,
+      "maskDisplayMath": true,
+      "maskComments": false,
+      "maskPrefix": "MASK_"
+    }
+  },
+  "output": {
+    "defaultOutputDir": "./output"
+  }
+} 

@@ -1,0 +1,37 @@
+{
+  "name": "latex-translator",
+  "version": "1.0.0",
+  "description": "LaTeX解析器，用于解析LaTeX文件或项目并输出AST，支持翻译功能",
+  "main": "dist/index.js",
+  "bin": {
+    "latex-translator": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "ts-node src/cli.ts",
+    "translate": "ts-node src/cli.ts translate"
+  },
+  "keywords": [
+    "latex",
+    "ast",
+    "parser",
+    "translator"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ast-gen": "file:../AST-Gen",
+    "axios": "^1.6.0",
+    "config": "^4.0.0",
+    "openai": "^4.100.0",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/config": "^3.3.5",
+    "@types/node": "^20.8.2",
+    "@types/yargs": "^17.0.25",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  }
+}

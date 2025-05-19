@@ -1,0 +1,44 @@
+# 依赖目录
+/node_modules
+/.pnp
+.pnp.js
+
+# 编译输出
+/dist
+
+# 测试输出
+/output
+/test-output
+
+# 环境文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 编辑器配置
+.vscode
+.idea
+*.swp
+*.swo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 缓存
+/.cache
+
+# 配置文件 - 只跟踪示例文件，不跟踪实际配置
+/config/*
+!/config/default.example.json
+
+# 其他生成的文件
+*.log
+*.tsbuildinfo 
