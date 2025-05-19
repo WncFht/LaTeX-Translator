@@ -6,11 +6,11 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { ProjectAST } from 'ast-gen';
+import { ProjectAST, AstTypes } from 'ast-gen';
 
 interface MaskedNode {
   id: string;
-  originalContent: any;
+  originalContent: AstTypes.Ast;
 }
 
 export class Replacer {
@@ -40,7 +40,7 @@ export class Replacer {
       const maskedNodesMap = new Map<string, MaskedNode>();
       
       // 需要遍历原始AST，根据节点ID找到原始内容
-      const nodesById = new Map<string, any>();
+      const nodesById = new Map<string, AstTypes.Ast>();
       
       // 提取所有节点
       for (const fileAst of originalAst.files) {
@@ -75,24 +75,33 @@ export class Replacer {
    * @param nodes 节点数组
    * @param nodesById 按ID存储的节点映射
    */
-  private static extractAllNodes(nodes: any[], nodesById: Map<string, any>): void {
+  private static extractAllNodes(nodes: AstTypes.Ast[], nodesById: Map<string, AstTypes.Ast>): void {
     for (const node of nodes) {
-      if (!node || !node.type) continue;
+      if (!node) continue;
+      
+      // 如果node是数组，递归处理
+      if (Array.isArray(node)) {
+        Replacer.extractAllNodes(node, nodesById);
+        continue;
+      }
+      
+      // 现在我们可以安全地访问node.type
+      if (!node.type) continue;
       
       // 如果节点有ID，添加到映射
-      if (node.id) {
-        nodesById.set(node.id, node);
+      if ('id' in node && node.id) {
+        nodesById.set(node.id as string, node);
       }
       
       // 递归处理子节点
-      if (node.content && Array.isArray(node.content)) {
+      if ('content' in node && Array.isArray(node.content)) {
         Replacer.extractAllNodes(node.content, nodesById);
       }
       
       // 处理参数
-      if (node.args && Array.isArray(node.args)) {
+      if ('args' in node && Array.isArray(node.args)) {
         for (const arg of node.args) {
-          if (arg.content && Array.isArray(arg.content)) {
+          if (arg && 'content' in arg && Array.isArray(arg.content)) {
             Replacer.extractAllNodes(arg.content, nodesById);
           }
         }
@@ -109,7 +118,8 @@ export class Replacer {
     let replaced = translatedText;
     
     // 使用正则表达式查找所有掩码
-    const maskRegex = new RegExp(`${this.maskPrefix}([A-Z]+_\\d+)`, 'g');
+    // 更全面的匹配模式，可以处理掩码周围可能的空格和标点
+    const maskRegex = new RegExp(`${this.maskPrefix}([A-Z_]+_\\d+)\\b`, 'g');
     
     // 替换所有掩码
     replaced = replaced.replace(maskRegex, (match, maskId) => {
@@ -133,30 +143,49 @@ export class Replacer {
    * @param node AST节点
    * @returns LaTeX代码
    */
-  private nodeToLatex(node: any): string {
-    if (!node || !node.type) return '';
+  private nodeToLatex(node: AstTypes.Ast): string {
+    if (!node) return '';
     
-    switch (node.type) {
+    // 如果node是数组，处理数组中的每个节点
+    if (Array.isArray(node)) {
+      return this.nodesToLatex(node);
+    }
+    
+    // 安全访问type属性
+    if (!node.type) return '';
+    
+    // 处理节点基于其类型
+    const nodeType = node.type.toString();
+    
+    switch (nodeType) {
       case 'macro':
-        return this.macroToLatex(node);
+        return this.macroToLatex(node as AstTypes.Macro);
         
       case 'environment':
         return this.environmentToLatex(node);
         
-      case 'math.inline':
+      case 'inlinemath':
         return this.inlineMathToLatex(node);
         
-      case 'math.display':
+      case 'displaymath':
         return this.displayMathToLatex(node);
         
       case 'comment':
-        return `%${node.content}\n`;
+        return 'content' in node && typeof node.content === 'string' ? 
+          `%${node.content}\n` : '';
         
       default:
-        if (node.content && Array.isArray(node.content)) {
+        // 处理非标准类型（如math.inline、math.display等）
+        if (nodeType === 'math.inline') {
+          return this.inlineMathToLatex(node);
+        } else if (nodeType === 'math.display') {
+          return this.displayMathToLatex(node);
+        }
+        // 其他类型的处理
+        else if ('content' in node && Array.isArray(node.content)) {
           return this.nodesToLatex(node.content);
-        } else if (node.content && typeof node.content === 'string') {
-          return node.content;
+        } else if ('content' in node && typeof node.content === 'string') {
+          return node.content as string;
         }
         return '';
     }
@@ -167,7 +196,7 @@ export class Replacer {
    * @param nodes 节点数组
    * @returns LaTeX代码
    */
-  private nodesToLatex(nodes: any[]): string {
+  private nodesToLatex(nodes: AstTypes.Ast[]): string {
     let result = '';
     
     for (const node of nodes) {
@@ -182,18 +211,21 @@ export class Replacer {
    * @param node 宏命令节点
    * @returns LaTeX代码
    */
-  private macroToLatex(node: any): string {
+  private macroToLatex(node: AstTypes.Macro): string {
     let result = `\\${node.content}`;
     
     // 添加参数
     if (node.args && Array.isArray(node.args)) {
       for (const arg of node.args) {
         if (arg.type === 'argument') {
-          const openMark = arg.openMark || '';
-          const closeMark = arg.closeMark || '';
+          const argument = arg as AstTypes.Argument;
+          const openMark = argument.openMark || '';
+          const closeMark = argument.closeMark || '';
           
-          if (arg.content && Array.isArray(arg.content)) {
-            result += `${openMark}${this.nodesToLatex(arg.content)}${closeMark}`;
+          if (Array.isArray(argument.content)) {
+            result += `${openMark}${this.nodesToLatex(argument.content)}${closeMark}`;
+          } else if (typeof argument.content === 'string') {
+            result += `${openMark}${argument.content}${closeMark}`;
           } else {
             result += `${openMark}${closeMark}`;
           }
@@ -209,18 +241,26 @@ export class Replacer {
    * @param node 环境节点
    * @returns LaTeX代码
    */
-  private environmentToLatex(node: any): string {
-    let result = `\\begin{${node.env}}`;
+  private environmentToLatex(node: AstTypes.Ast): string {
+    // 确保node有env属性
+    if (!('env' in node)) return '';
+    
+    const env = (node as any).env as string;
+    
+    let result = `\\begin{${env}}`;
     
     // 添加环境参数
-    if (node.args && Array.isArray(node.args)) {
+    if ('args' in node && node.args && Array.isArray(node.args)) {
       for (const arg of node.args) {
         if (arg.type === 'argument') {
-          const openMark = arg.openMark || '';
-          const closeMark = arg.closeMark || '';
+          const argument = arg as AstTypes.Argument;
+          const openMark = argument.openMark || '';
+          const closeMark = argument.closeMark || '';
           
-          if (arg.content && Array.isArray(arg.content)) {
-            result += `${openMark}${this.nodesToLatex(arg.content)}${closeMark}`;
+          if (Array.isArray(argument.content)) {
+            result += `${openMark}${this.nodesToLatex(argument.content)}${closeMark}`;
+          } else if (typeof argument.content === 'string') {
+            result += `${openMark}${argument.content}${closeMark}`;
           } else {
             result += `${openMark}${closeMark}`;
           }
@@ -229,12 +269,12 @@ export class Replacer {
     }
     
     // 添加环境内容
-    if (node.content && Array.isArray(node.content)) {
+    if ('content' in node && node.content && Array.isArray(node.content)) {
       result += this.nodesToLatex(node.content);
     }
     
     // 添加环境结束标记
-    result += `\\end{${node.env}}`;
+    result += `\\end{${env}}`;
     
     return result;
   }
@@ -244,11 +284,13 @@ export class Replacer {
    * @param node 内联数学节点
    * @returns LaTeX代码
    */
-  private inlineMathToLatex(node: any): string {
+  private inlineMathToLatex(node: AstTypes.Ast): string {
     let content = '';
     
-    if (node.content && Array.isArray(node.content)) {
+    if ('content' in node && node.content && Array.isArray(node.content)) {
       content = this.nodesToLatex(node.content);
+    } else if ('content' in node && typeof node.content === 'string') {
+      content = node.content as string;
     }
     
     return `$${content}$`;
@@ -259,11 +301,13 @@ export class Replacer {
    * @param node 行间数学节点
    * @returns LaTeX代码
    */
-  private displayMathToLatex(node: any): string {
+  private displayMathToLatex(node: AstTypes.Ast): string {
     let content = '';
     
-    if (node.content && Array.isArray(node.content)) {
+    if ('content' in node && node.content && Array.isArray(node.content)) {
       content = this.nodesToLatex(node.content);
+    } else if ('content' in node && typeof node.content === 'string') {
+      content = node.content as string;
     }
     
     return `\\[${content}\\]`;

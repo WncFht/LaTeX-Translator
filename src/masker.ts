@@ -8,7 +8,8 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import {
   ProjectAST,
-  ProjectFileAst
+  ProjectFileAst,
+  AstTypes
 } from 'ast-gen';
 
 interface MaskingOptions {
@@ -28,7 +29,7 @@ interface MaskingOptions {
 
 interface MaskedNode {
   id: string;
-  originalContent: any;
+  originalContent: AstTypes.Ast;
 }
 
 export class Masker {
@@ -108,16 +109,28 @@ export class Masker {
    * @param nodes 节点数组
    * @returns 处理后的文本
    */
-  private processNodes(nodes: any[]): string {
+  private processNodes(nodes: AstTypes.Ast[]): string {
     let result = '';
     
     for (const node of nodes) {
-      if (!node || !node.type) continue;
+      if (!node) continue;
       
-      switch (node.type) {
+      // 如果node是数组，递归处理
+      if (Array.isArray(node)) {
+        result += this.processNodes(node);
+        continue;
+      }
+      
+      // 现在我们可以安全地访问node.type
+      if (!node.type) continue;
+      
+      // 获取节点类型为字符串
+      const nodeType = node.type.toString();
+      
+      switch (nodeType) {
         case 'string':
           // 直接添加文本
-          result += node.content;
+          result += (node as AstTypes.String).content;
           break;
           
         case 'whitespace':
@@ -137,7 +150,7 @@ export class Masker {
           
         case 'macro':
           // 处理宏命令
-          result += this.processMacro(node);
+          result += this.processMacro(node as AstTypes.Macro);
           break;
           
         case 'environment':
@@ -145,21 +158,27 @@ export class Masker {
           result += this.processEnvironment(node);
           break;
           
-        case 'math.inline':
+        case 'inlinemath':
           // 处理内联数学
           result += this.processInlineMath(node);
           break;
           
-        case 'math.display':
+        case 'displaymath':
           // 处理行间数学
           result += this.processDisplayMath(node);
           break;
           
         default:
+          // 处理非标准类型（如math.inline、math.display等）
+          if (nodeType === 'math.inline') {
+            result += this.processInlineMath(node);
+          } else if (nodeType === 'math.display') {
+            result += this.processDisplayMath(node);
+          } 
           // 递归处理其他类型的节点
-          if (node.content && Array.isArray(node.content)) {
+          else if ('content' in node && Array.isArray(node.content)) {
             result += this.processNodes(node.content);
-          } else if (node.content && typeof node.content === 'string') {
+          } else if ('content' in node && typeof node.content === 'string') {
             result += node.content;
           }
       }
@@ -173,7 +192,7 @@ export class Masker {
    * @param node 宏命令节点
    * @returns 处理后的文本
    */
-  private processMacro(node: any): string {
+  private processMacro(node: AstTypes.Macro): string {
     // 检查是否需要掩码这个命令
     if (this.options.maskCommands && 
         this.options.maskCommands.includes(node.content)) {
@@ -191,11 +210,26 @@ export class Masker {
     
     // 特殊处理某些宏
     if (node.content === 'begin' || node.content === 'end') {
-      return `\\${node.content}${this.processArgs(node.args)}`;
+      return `\\${node.content}${this.processArgs(node.args || [])}`;
+    }
+    
+    // 检查诸如\textbf、\textit等格式化命令
+    const formattingCommands = ['textbf', 'textit', 'texttt', 'textrm', 'textsc', 'emph', 'underline', 'textcolor'];
+    if (formattingCommands.includes(node.content)) {
+      // 创建掩码ID
+      const maskId = this.generateMaskId('FMT');
+      
+      // 存储原始节点
+      this.maskedNodes.set(maskId, {
+        id: maskId,
+        originalContent: node
+      });
+      
+      return ` ${this.options.maskPrefix}${maskId} `;
     }
     
     // 对于其他宏，包括其参数
-    return `\\${node.content}${this.processArgs(node.args)}`;
+    return `\\${node.content}${this.processArgs(node.args || [])}`;
   }
   
   /**
@@ -203,12 +237,22 @@ export class Masker {
    * @param node 环境节点
    * @returns 处理后的文本
    */
-  private processEnvironment(node: any): string {
-    // 检查是否需要掩码这个环境
-    if (node.env && this.options.maskEnvironments && 
-        this.options.maskEnvironments.includes(node.env)) {
-      // 创建掩码ID
-      const maskId = this.generateMaskId('ENV');
+  private processEnvironment(node: AstTypes.Ast): string {
+    // 确保node有env属性
+    if (!('env' in node)) return '';
+    
+    const env = (node as any).env as string;
+    
+    // 数学相关环境列表
+    const mathEnvironments = ['equation', 'align', 'gather', 'multline', 'eqnarray', 'matrix', 'pmatrix', 'bmatrix', 'array'];
+    
+    // 检查是否是数学环境且需要掩码
+    const isMathEnv = mathEnvironments.includes(env);
+    
+    if ((isMathEnv && this.options.maskDisplayMath) || 
+        (this.options.maskEnvironments && this.options.maskEnvironments.includes(env))) {
+      // 创建掩码ID，为数学环境使用特殊前缀
+      const maskId = this.generateMaskId(isMathEnv ? 'MATH_ENV' : 'ENV');
       
       // 存储原始节点
       this.maskedNodes.set(maskId, {
@@ -220,20 +264,20 @@ export class Masker {
     }
     
     // 处理环境头部
-    let result = `\\begin{${node.env}}`;
+    let result = `\\begin{${env}}`;
     
     // 添加可能的环境参数
-    if (node.args && Array.isArray(node.args)) {
+    if ('args' in node && node.args && Array.isArray(node.args)) {
       result += this.processArgs(node.args);
     }
     
     // 处理环境内容
-    if (node.content && Array.isArray(node.content)) {
+    if ('content' in node && node.content && Array.isArray(node.content)) {
       result += this.processNodes(node.content);
     }
     
     // 处理环境尾部
-    result += `\\end{${node.env}}`;
+    result += `\\end{${env}}`;
     
     return result;
   }
@@ -243,7 +287,7 @@ export class Masker {
    * @param node 内联数学节点
    * @returns 处理后的文本
    */
-  private processInlineMath(node: any): string {
+  private processInlineMath(node: AstTypes.Ast): string {
     if (this.options.maskInlineMath) {
       // 创建掩码ID
       const maskId = this.generateMaskId('IMATH');
@@ -254,13 +298,16 @@ export class Masker {
         originalContent: node
       });
       
+      // 使用显著的标记使掩码更明显
       return ` ${this.options.maskPrefix}${maskId} `;
     }
     
     // 如果不掩码，返回原始内容
     let content = '';
-    if (node.content && Array.isArray(node.content)) {
+    if ('content' in node && node.content && Array.isArray(node.content)) {
       content = this.processNodes(node.content);
+    } else if ('content' in node && node.content && typeof node.content === 'string') {
+      content = node.content as string;
     }
     return `$${content}$`;
   }
@@ -270,7 +317,7 @@ export class Masker {
    * @param node 行间数学节点
    * @returns 处理后的文本
    */
-  private processDisplayMath(node: any): string {
+  private processDisplayMath(node: AstTypes.Ast): string {
     if (this.options.maskDisplayMath) {
       // 创建掩码ID
       const maskId = this.generateMaskId('DMATH');
@@ -281,13 +328,25 @@ export class Masker {
         originalContent: node
       });
       
+      // 使用显著的标记使掩码更明显
       return ` ${this.options.maskPrefix}${maskId} `;
     }
     
     // 如果不掩码，返回原始内容
     let content = '';
-    if (node.content && Array.isArray(node.content)) {
+    if ('content' in node && node.content && Array.isArray(node.content)) {
       content = this.processNodes(node.content);
+    } else if ('content' in node && node.content && typeof node.content === 'string') {
+      content = node.content as string;
+    }
+    
+    // 根据节点属性返回适当的分隔符
+    if ('env' in node && (
+        (node as any).env === 'align' || 
+        (node as any).env === 'equation' || 
+        (node as any).isEnvPart
+    )) {
+      return content; // 对于环境的一部分，不添加分隔符
     }
     return `\\[${content}\\]`;
   }
@@ -297,7 +356,7 @@ export class Masker {
    * @param node 注释节点
    * @returns 处理后的文本
    */
-  private processComment(node: any): string {
+  private processComment(node: AstTypes.Ast): string {
     if (this.options.maskComments) {
       // 创建掩码ID
       const maskId = this.generateMaskId('COMMENT');
@@ -312,7 +371,11 @@ export class Masker {
     }
     
     // 如果不掩码，返回原始内容
-    return `%${node.content}\n`;
+    if ('content' in node && typeof node.content === 'string') {
+      return `%${node.content}\n`;
+    }
+    
+    return '';
   }
   
   /**
@@ -320,21 +383,33 @@ export class Masker {
    * @param args 参数数组
    * @returns 处理后的文本
    */
-  private processArgs(args: any[]): string {
+  private processArgs(args: AstTypes.Ast[]): string {
     if (!args || !Array.isArray(args)) return '';
     
     let result = '';
     
     for (const arg of args) {
-      if (!arg || !arg.type) continue;
+      if (!arg) continue;
+      
+      // 如果arg是数组，递归处理
+      if (Array.isArray(arg)) {
+        result += this.processArgs(arg);
+        continue;
+      }
+      
+      // 现在可以安全地访问arg.type
+      if (!arg.type) continue;
       
       // 处理不同类型的参数
       if (arg.type === 'argument') {
-        const openMark = arg.openMark || '';
-        const closeMark = arg.closeMark || '';
+        const argument = arg as AstTypes.Argument;
+        const openMark = argument.openMark || '';
+        const closeMark = argument.closeMark || '';
         
-        if (arg.content && Array.isArray(arg.content)) {
-          result += `${openMark}${this.processNodes(arg.content)}${closeMark}`;
+        if (argument.content && Array.isArray(argument.content)) {
+          result += `${openMark}${this.processNodes(argument.content)}${closeMark}`;
+        } else if (typeof argument.content === 'string') {
+          result += `${openMark}${argument.content}${closeMark}`;
         } else {
           result += `${openMark}${closeMark}`;
         }
@@ -380,9 +455,7 @@ export class Masker {
     this.maskedNodes.forEach((node, key) => {
       maskedNodesObj[key] = {
         id: node.id,
-        type: node.originalContent.type,
-        // 不存储完整内容，只存储必要信息
-        contentType: typeof node.originalContent.content
+        originalContent: node.originalContent
       };
     });
     

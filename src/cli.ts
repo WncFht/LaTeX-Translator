@@ -10,7 +10,8 @@ import config from 'config';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { Translator } from './translator';
-import { LaTeXTranslator } from './latex-translator';
+import { LaTeXTranslator, TranslatorOptions } from './latex-translator';
+import { ParserOptions } from 'ast-gen';
 
 // 从配置文件获取默认值，检查配置项是否存在的安全方法
 const getConfigOrDefault = <T>(path: string, defaultValue: T): T => {
@@ -168,42 +169,34 @@ async function handleParseCommand(argv: any): Promise<void> {
 async function handleTranslateCommand(argv: any): Promise<void> {
   try {
     // 准备翻译器选项
-    const translatorOptions: any = {
+    const translatorOptions: TranslatorOptions = {
       openaiConfig: {
-        apiKey: argv['api-key'],
-        baseUrl: argv['base-url'],
-        model: argv.model,
-        temperature: argv.temperature
+        apiKey: argv['api-key'] as string,
+        baseUrl: argv['base-url'] as string,
+        model: argv.model as string,
+        temperature: argv.temperature as number
       },
-      targetLanguage: argv['target-lang'],
-      sourceLanguage: argv['source-lang'],
-      outputDir: argv['output-dir']
+      targetLanguage: argv['target-lang'] as string,
+      sourceLanguage: argv['source-lang'] as string | undefined,
+      outputDir: argv['output-dir'] as string,
+      maskingOptions: {}
     };
 
     // 获取掩码环境和命令（如果提供）
     if (argv['mask-env']) {
-      if (!translatorOptions.maskingOptions) {
-        translatorOptions.maskingOptions = {};
-      }
-      translatorOptions.maskingOptions.maskEnvironments = 
-        argv['mask-env'].split(',').map((env: string) => env.trim());
+      translatorOptions.maskingOptions!.maskEnvironments = 
+        (argv['mask-env'] as string).split(',').map((env: string) => env.trim());
     }
 
     if (argv['mask-cmd']) {
-      if (!translatorOptions.maskingOptions) {
-        translatorOptions.maskingOptions = {};
-      }
-      translatorOptions.maskingOptions.maskCommands = 
-        argv['mask-cmd'].split(',').map((cmd: string) => cmd.trim());
+      translatorOptions.maskingOptions!.maskCommands = 
+        (argv['mask-cmd'] as string).split(',').map((cmd: string) => cmd.trim());
     }
 
     // 设置是否掩码数学公式
     if (argv['no-mask-math'] !== undefined) {
-      if (!translatorOptions.maskingOptions) {
-        translatorOptions.maskingOptions = {};
-      }
-      translatorOptions.maskingOptions.maskInlineMath = !argv['no-mask-math'];
-      translatorOptions.maskingOptions.maskDisplayMath = !argv['no-mask-math'];
+      translatorOptions.maskingOptions!.maskInlineMath = !argv['no-mask-math'];
+      translatorOptions.maskingOptions!.maskDisplayMath = !argv['no-mask-math'];
     }
     
     // 创建翻译器实例

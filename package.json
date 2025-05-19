@@ -10,7 +10,8 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "ts-node src/cli.ts",
-    "translate": "ts-node src/cli.ts translate"
+    "translate": "ts-node src/cli.ts translate",
+    "clean-output": "rm -rf output"
   },
   "keywords": [
     "latex",

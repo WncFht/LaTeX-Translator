@@ -7,7 +7,7 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import config from 'config';
-import { parseLatexProject, ProjectAST } from 'ast-gen';
+import { parseLatexProject, ProjectAST, AstTypes } from 'ast-gen';
 import { Masker } from './masker';
 import { OpenAIClient, OpenAIConfig } from './openai-client';
 import { Replacer } from './replacer';
@@ -52,7 +52,7 @@ export class LaTeXTranslator {
   private originalAst: ProjectAST | null;
   
   constructor(options: TranslatorOptions = {}) {
-    // 从配置文件获取默认值
+    // 从配置文件获取默认值，使用try-catch处理可能的错误
     const getConfigOrDefault = <T>(path: string, defaultValue: T): T => {
       try {
         return config.get<T>(path);
@@ -205,7 +205,7 @@ export class LaTeXTranslator {
    * @returns 保存的文件路径
    */
   private async saveMaskedNodesMap(
-    maskedNodesMap: Map<string, any>,
+    maskedNodesMap: Map<string, { id: string; originalContent: AstTypes.Ast }>,
     originalPath: string
   ): Promise<string> {
     // 创建输出目录

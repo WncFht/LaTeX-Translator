@@ -22,7 +22,7 @@ export class OpenAIClient {
   private config: OpenAIConfig;
 
   constructor(customConfig?: Partial<OpenAIConfig>) {
-    // 从配置文件获取默认设置，使用try-catch处理可能的错误
+    // 从配置文件获取默认值，使用try-catch处理可能的错误
     const getConfigOrDefault = <T>(path: string, defaultValue: T): T => {
       try {
         return config.get<T>(path);

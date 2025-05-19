@@ -10,7 +10,8 @@ import {
   parseLatexProject,
   serializeProjectAstToJson,
   ProjectAST,
-  ParserOptions
+  ParserOptions,
+  AstTypes
 } from 'ast-gen';
 
 export class Translator {
