@@ -7,7 +7,7 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import config from 'config';
-import { parseLatexProject, ProjectAST, AstTypes, serializeProjectAstToJson, findRootFile, isTexFile } from 'ast-gen';
+import { parseLatexProject, ProjectAST, AstTypes, serializeProjectAstToJson, findRootFile, isTexFile, ProjectFileAst } from 'ast-gen';
 import { Masker } from './masker';
 import { OpenAIClient, OpenAIConfig } from './openai-client';
 import { Replacer } from './replacer';
@@ -46,6 +46,13 @@ interface ConfigMaskOptions {
   maskPrefix: string;
 }
 
+interface FileTranslationResult {
+  originalFilePath: string;
+  translatedFilePath: string;
+  maskedFilePath?: string;
+  translatedTextFilePath?: string;
+}
+
 export class LaTeXTranslator {
   private options: Required<Pick<TranslatorOptions, 'targetLanguage' | 'saveIntermediateFiles' | 'outputDir'>>;
   private translator: Translator;
@@ -57,6 +64,8 @@ export class LaTeXTranslator {
   private translatedDir: string;
   private logDir: string;
   private rootFile: string | null;
+  private processedFiles: Set<string>;
+  private inputPathRootAbsolute!: string;
   
   constructor(options: TranslatorOptions = {}) {
     // 从配置文件获取默认值，使用try-catch处理可能的错误
@@ -127,6 +136,7 @@ export class LaTeXTranslator {
     this.translatedDir = '';
     this.logDir = '';
     this.rootFile = null;
+    this.processedFiles = new Set<string>();
   }
   
   /**
@@ -136,10 +146,19 @@ export class LaTeXTranslator {
   async translate(inputPath: string): Promise<string> {
     try {
       // 0. 创建项目目录结构
+      // 解析输入路径，并存储其绝对路径作为项目根目录
+      const absInputPath = path.resolve(inputPath);
+      const inputStatForRoot = await fs.stat(absInputPath);
+      if (inputStatForRoot.isDirectory()) {
+        this.inputPathRootAbsolute = absInputPath;
+      } else {
+        this.inputPathRootAbsolute = path.dirname(absInputPath);
+      }
+
       await this.setupProjectDirectories(inputPath);
       
       // 1. 解析LaTeX为AST
-      console.log('正在解析LaTeX文件...');
+      console.log('正在解析LaTeX项目...');
       this.originalAst = await this.parseLatex(inputPath);
       
       // 复制原始项目到原始目录
@@ -148,42 +167,234 @@ export class LaTeXTranslator {
       // 1.1 保存AST为JSON文件
       const astJsonPath = await this.saveAstAsJson(this.originalAst, inputPath);
       
-      // 2. 掩码AST
-      console.log('正在掩码AST...');
-      const { maskedText, maskedNodesMap } = await this.masker.maskAst(this.originalAst);
+      // 如果是单个文件，直接处理
+      const inputStat = await fs.stat(inputPath);
+      if (inputStat.isFile()) {
+        console.log(`处理单个文件: ${inputPath}`);
+        return await this.processSingleFile(inputPath, this.originalAst);
+      }
       
-      // 3. 保存掩码后的文本
-      const maskedFilePath = await this.saveMaskedText(maskedText, inputPath);
+      // 2. 处理多文件项目
+      console.log('处理多文件项目...');
+      const translatedFiles = await this.processMultiFileProject(this.originalAst);
       
-      // 4. 保存掩码节点映射
-      const maskedNodesMapPath = await this.saveMaskedNodesMap(maskedNodesMap, inputPath);
+      // 3. 复制非.tex文件
+      await this.copyNonTexFiles(this.originalDir, this.translatedDir);
       
-      // 5. 翻译掩码后的文本
-      console.log('正在翻译文本...');
-      const translatedText = await this.translateMaskedText(maskedText);
-      
-      // 6. 保存翻译后的文本
-      const translatedFilePath = await this.saveTranslatedText(translatedText, inputPath);
-      
-      // 7. 替换掩码节点
-      console.log('正在替换掩码节点...');
-      const replacer = new Replacer(maskedNodesMap);
-      const replacedText = replacer.replaceTranslatedText(translatedText);
-      
-      // 8. 为翻译后的文本添加中文支持
-      const enhancedText = this.addChineseSupport(replacedText);
-      
-      // 9. 保存替换后的文本
-      const outputFilePath = await this.saveReplacedText(enhancedText, inputPath);
-      
-      console.log('翻译完成！');
-      console.log(`输出文件: ${outputFilePath}`);
-      
-      return outputFilePath;
+      // 返回根文件路径（如果存在）
+      if (this.rootFile) {
+        const rootFilePath = path.join(this.translatedDir, this.rootFile);
+        console.log(`翻译完成！根文件: ${rootFilePath}`);
+        return rootFilePath;
+      } else {
+        const translatedFilesStr = translatedFiles.map(f => f.translatedFilePath).join('\n');
+        console.log(`翻译完成！已翻译文件:\n${translatedFilesStr}`);
+        return this.translatedDir;
+      }
     } catch (error) {
       console.error('翻译过程中出错:', error);
       throw error;
     }
+  }
+  
+  /**
+   * 处理多文件项目
+   * @param ast 项目AST
+   * @returns 翻译结果数组
+   */
+  private async processMultiFileProject(ast: ProjectAST): Promise<FileTranslationResult[]> {
+    // 这个数组用来存储每个文件的翻译结果
+    const results: FileTranslationResult[] = [];
+    
+    // 检查AST是否包含文件列表
+    if (!ast.files || !Array.isArray(ast.files) || ast.files.length === 0) {
+      console.warn('项目AST中没有找到文件列表');
+      return [];
+    }
+    
+    console.log(`项目包含 ${ast.files.length} 个文件，开始递归处理...`);
+    
+    // 找到根文件，并确保它首先被处理
+    let orderedFiles = [...ast.files];
+    if (ast.rootFilePath) {
+      const rootFileIndex = orderedFiles.findIndex(file => 
+        file.filePath === ast.rootFilePath);
+      
+      if (rootFileIndex > -1) {
+        // 将根文件移到数组的开头
+        const [rootFile] = orderedFiles.splice(rootFileIndex, 1);
+        orderedFiles.unshift(rootFile);
+        console.log(`根文件 ${ast.rootFilePath} 将被首先处理`);
+      }
+    }
+    
+    // 对每个文件进行处理
+    for (const fileAst of orderedFiles) {
+      // 检查文件是否已处理
+      if (this.processedFiles.has(fileAst.filePath)) {
+        console.log(`文件 ${fileAst.filePath} 已处理，跳过`);
+        continue;
+      }
+      
+      console.log(`正在处理文件: ${fileAst.filePath}`);
+      
+      try {
+        // 计算相对于原始目录的路径
+        const relativeFilePath = this.getRelativeFilePath(fileAst.filePath);
+        
+        // 原始文件的路径
+        const originalFilePath = path.join(this.originalDir, relativeFilePath);
+        
+        // 处理单个文件
+        const fileContent = await fs.readFile(originalFilePath, 'utf8');
+        
+        // 创建用于该文件的特定AST对象
+        const singleFileAst: ProjectAST = {
+          files: [fileAst],
+          macros: ast.macros,
+          _detailedMacros: ast._detailedMacros,
+          errors: ast.errors,
+          rootFilePath: fileAst.filePath
+        };
+        
+        // 2. 掩码AST
+        console.log(`正在掩码文件: ${relativeFilePath}`);
+        const { maskedText, maskedNodesMap } = await this.masker.maskAst(singleFileAst);
+        
+        // 3. 保存掩码后的文本
+        const maskedFilePath = await this.saveMaskedText(maskedText, relativeFilePath);
+        
+        // 4. 保存掩码节点映射
+        const maskedNodesMapPath = await this.saveMaskedNodesMap(maskedNodesMap, relativeFilePath);
+        
+        // 5. 翻译掩码后的文本
+        console.log(`正在翻译文件: ${relativeFilePath}`);
+        const translatedText = await this.translateMaskedText(maskedText);
+        
+        // 6. 保存翻译后的文本
+        const translatedTextFilePath = await this.saveTranslatedText(translatedText, relativeFilePath);
+        
+        // 7. 替换掩码节点
+        console.log(`正在替换文件 ${relativeFilePath} 中的掩码节点...`);
+        const replacer = new Replacer(maskedNodesMap);
+        const replacedText = replacer.replaceTranslatedText(translatedText);
+        
+        // 8. 为翻译后的文本添加中文支持
+        const enhancedText = this.addChineseSupport(replacedText);
+        
+        // 9. 保存替换后的文本
+        const translatedFilePath = path.join(this.translatedDir, relativeFilePath);
+        await this.ensureDirectoryExists(path.dirname(translatedFilePath));
+        await fs.writeFile(translatedFilePath, enhancedText, 'utf8');
+        
+        console.log(`文件 ${relativeFilePath} 翻译完成，已保存到 ${translatedFilePath}`);
+        
+        // 将此文件添加到处理过的文件集合中
+        this.processedFiles.add(fileAst.filePath);
+        
+        // 添加到结果数组
+        results.push({
+          originalFilePath,
+          translatedFilePath,
+          maskedFilePath,
+          translatedTextFilePath
+        });
+      } catch (error) {
+        console.error(`处理文件 ${fileAst.filePath} 时出错:`, error);
+        // 继续处理下一个文件
+      }
+    }
+    
+    return results;
+  }
+  
+  /**
+   * 获取文件相对于原始目录的路径
+   * @param fileAstAbsoluteFilePath 文件的绝对路径
+   * @returns 相对路径
+   */
+  private getRelativeFilePath(fileAstAbsoluteFilePath: string): string {
+    // Precondition: this.inputPathRootAbsolute is set and is the absolute path to the root of the project
+    // that was passed to parseLatex and used as the source for copyOriginalProject.
+    // fileAstAbsoluteFilePath is an absolute path to a file within that original project.
+
+    if (!this.inputPathRootAbsolute) {
+      console.error('CRITICAL: inputPathRootAbsolute was not set prior to calling getRelativeFilePath.');
+      // Fallback behavior that might be problematic but prevents a crash:
+      return path.basename(fileAstAbsoluteFilePath); 
+    }
+
+    const relativePath = path.relative(this.inputPathRootAbsolute, fileAstAbsoluteFilePath);
+
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+      console.warn(
+        `File path ${fileAstAbsoluteFilePath} is not cleanly relative to project root ${this.inputPathRootAbsolute}. ` +
+        `Calculated relative path: ${relativePath}. Falling back to basename.`
+      );
+      return path.basename(fileAstAbsoluteFilePath);
+    }
+    
+    if (relativePath === '') {
+        // This case can happen if fileAstAbsoluteFilePath is the same as inputPathRootAbsolute (e.g. a single file project where root is the file itself)
+        // However, inputPathRootAbsolute is generally a directory. If it was a file, dirname was taken.
+        // If relativePath is empty because fileAstAbsoluteFilePath IS inputPathRootAbsolute (directory), this is an edge case not typically expected for a *file* path.
+        // For a file that is the project root (e.g. single file input), basename is appropriate.
+        return path.basename(fileAstAbsoluteFilePath);
+    }
+
+    return relativePath;
+  }
+  
+  /**
+   * 确保目录存在
+   * @param directory 目录路径
+   */
+  private async ensureDirectoryExists(directory: string): Promise<void> {
+    await fs.mkdir(directory, { recursive: true });
+  }
+  
+  /**
+   * 处理单个LaTeX文件
+   * @param filePath 文件路径
+   * @param ast 文件AST
+   * @returns 翻译后的文件路径
+   */
+  private async processSingleFile(filePath: string, ast: ProjectAST): Promise<string> {
+    const fileName = path.basename(filePath);
+    console.log(`处理单个文件: ${fileName}`);
+    
+    // 2. 掩码AST
+    console.log('正在掩码AST...');
+    const { maskedText, maskedNodesMap } = await this.masker.maskAst(ast);
+    
+    // 3. 保存掩码后的文本
+    const maskedFilePath = await this.saveMaskedText(maskedText, fileName);
+    
+    // 4. 保存掩码节点映射
+    const maskedNodesMapPath = await this.saveMaskedNodesMap(maskedNodesMap, fileName);
+    
+    // 5. 翻译掩码后的文本
+    console.log('正在翻译文本...');
+    const translatedText = await this.translateMaskedText(maskedText);
+    
+    // 6. 保存翻译后的文本
+    const translatedFilePath = await this.saveTranslatedText(translatedText, fileName);
+    
+    // 7. 替换掩码节点
+    console.log('正在替换掩码节点...');
+    const replacer = new Replacer(maskedNodesMap);
+    const replacedText = replacer.replaceTranslatedText(translatedText);
+    
+    // 8. 为翻译后的文本添加中文支持
+    const enhancedText = this.addChineseSupport(replacedText);
+    
+    // 9. 保存替换后的文本
+    const outputFilePath = path.join(this.translatedDir, fileName);
+    await fs.writeFile(outputFilePath, enhancedText, 'utf8');
+    
+    console.log(`翻译完成！输出文件: ${outputFilePath}`);
+    
+    return outputFilePath;
   }
   
   /**
@@ -192,10 +403,18 @@ export class LaTeXTranslator {
    */
   private async setupProjectDirectories(inputPath: string): Promise<void> {
     // 获取原始文件/文件夹名称作为项目名
-    const inputName = path.basename(inputPath, path.extname(inputPath));
+    const resolvedInputPath = path.resolve(inputPath);
+    const inputStats = await fs.stat(resolvedInputPath);
+    let projectName: string;
+
+    if (inputStats.isDirectory()) {
+      projectName = path.basename(resolvedInputPath); // 如果是目录，使用完整的基础名
+    } else {
+      projectName = path.basename(resolvedInputPath, path.extname(resolvedInputPath)); // 如果是文件，移除扩展名
+    }
     
     // 创建项目目录
-    this.projectDir = path.join(this.options.outputDir, inputName);
+    this.projectDir = path.join(this.options.outputDir, projectName);
     
     // 创建原始文件目录、翻译后文件目录和日志目录
     this.originalDir = path.join(this.projectDir, 'original');
@@ -276,11 +495,17 @@ export class LaTeXTranslator {
       return texContent;
     }
     
-    // 在documentclass后添加ctex包
-    return texContent.replace(
-      /(\\documentclass(?:\[.*?\])?\{.*?\})/,
-      '$1\n\\usepackage[UTF8]{ctex} % 添加中文支持'
-    );
+    // 检查文档是否包含documentclass
+    if (texContent.includes('\\documentclass')) {
+      // 在documentclass后添加ctex包
+      return texContent.replace(
+        /(\\documentclass(?:\[.*?\])?\{.*?\})/,
+        '$1\n\\usepackage[UTF8]{ctex} % 添加中文支持'
+      );
+    }
+    
+    // 如果是被包含的文件，不包含documentclass，则直接返回
+    return texContent;
   }
   
   /**
@@ -321,17 +546,24 @@ export class LaTeXTranslator {
   /**
    * 保存掩码后的文本
    * @param maskedText 掩码后的文本
-   * @param originalPath 原始文件路径
+   * @param fileIdentifier 文件标识符（文件名或相对路径）
    * @returns 保存的文件路径
    */
-  private async saveMaskedText(maskedText: string, originalPath: string): Promise<string> {
+  private async saveMaskedText(maskedText: string, fileIdentifier: string): Promise<string> {
+    // 去除扩展名，如果有的话
+    const basename = path.basename(fileIdentifier, path.extname(fileIdentifier));
+    // 创建包含路径信息的文件名，替换路径分隔符为下划线
+    const safeIdentifier = fileIdentifier.replace(/[\/\\]/g, '_');
+    
     // 确定输出文件名
-    const originalFileName = path.basename(originalPath, path.extname(originalPath));
-    const maskedFilePath = path.join(this.logDir, `${originalFileName}_masked.txt`);
+    const maskedFilePath = path.join(this.logDir, `${safeIdentifier}_masked.txt`);
     
     // 保存掩码后的文本
     await fs.writeFile(maskedFilePath, maskedText, 'utf8');
-    console.log(`掩码后的文本已保存到: ${maskedFilePath}`);
+    
+    if (this.options.saveIntermediateFiles) {
+      console.log(`掩码后的文本已保存到: ${maskedFilePath}`);
+    }
     
     return maskedFilePath;
   }
@@ -339,16 +571,18 @@ export class LaTeXTranslator {
   /**
    * 保存掩码节点映射
    * @param maskedNodesMap 掩码节点映射
-   * @param originalPath 原始文件路径
+   * @param fileIdentifier 文件标识符（文件名或相对路径）
    * @returns 保存的文件路径
    */
   private async saveMaskedNodesMap(
     maskedNodesMap: Map<string, { id: string; originalContent: AstTypes.Ast }>,
-    originalPath: string
+    fileIdentifier: string
   ): Promise<string> {
+    // 创建包含路径信息的文件名，替换路径分隔符为下划线
+    const safeIdentifier = fileIdentifier.replace(/[\/\\]/g, '_');
+    
     // 确定输出文件名
-    const originalFileName = path.basename(originalPath, path.extname(originalPath));
-    const mapFilePath = path.join(this.logDir, `${originalFileName}_masked_map.json`);
+    const mapFilePath = path.join(this.logDir, `${safeIdentifier}_masked_map.json`);
     
     // 保存掩码节点映射
     await this.masker.saveMaskedNodesMap(mapFilePath);
@@ -383,50 +617,24 @@ export class LaTeXTranslator {
   /**
    * 保存翻译后的文本
    * @param translatedText 翻译后的文本
-   * @param originalPath 原始文件路径
+   * @param fileIdentifier 文件标识符（文件名或相对路径）
    * @returns 保存的文件路径
    */
-  private async saveTranslatedText(translatedText: string, originalPath: string): Promise<string> {
+  private async saveTranslatedText(translatedText: string, fileIdentifier: string): Promise<string> {
+    // 创建包含路径信息的文件名，替换路径分隔符为下划线
+    const safeIdentifier = fileIdentifier.replace(/[\/\\]/g, '_');
+    
     // 确定输出文件名
-    const originalFileName = path.basename(originalPath, path.extname(originalPath));
-    const translatedFilePath = path.join(this.logDir, `${originalFileName}_translated.txt`);
+    const translatedFilePath = path.join(this.logDir, `${safeIdentifier}_translated.txt`);
     
     // 保存翻译后的文本
     await fs.writeFile(translatedFilePath, translatedText, 'utf8');
-    console.log(`翻译后的文本已保存到: ${translatedFilePath}`);
     
-    return translatedFilePath;
-  }
-  
-  /**
-   * 保存替换后的文本
-   * @param replacedText 替换后的文本
-   * @param originalPath 原始文件路径
-   * @returns 保存的文件路径
-   */
-  private async saveReplacedText(replacedText: string, originalPath: string): Promise<string> {
-    let outputFilePath;
-    
-    if (this.rootFile) {
-      // 如果是项目中的根文件，保存到翻译后的目录中与根文件相同的路径
-      outputFilePath = path.join(this.translatedDir, this.rootFile);
-    } else {
-      // 如果是单个文件，直接保存到翻译后的目录
-      const originalFileName = path.basename(originalPath);
-      outputFilePath = path.join(this.translatedDir, originalFileName);
+    if (this.options.saveIntermediateFiles) {
+      console.log(`翻译后的文本已保存到: ${translatedFilePath}`);
     }
     
-    // 确保输出目录存在
-    await fs.mkdir(path.dirname(outputFilePath), { recursive: true });
-    
-    // 保存替换后的文本
-    await fs.writeFile(outputFilePath, replacedText, 'utf8');
-    console.log(`翻译后的LaTeX文件已保存到: ${outputFilePath}`);
-    
-    // 复制原始项目中的其他文件（非.tex文件）到翻译后的目录
-    await this.copyNonTexFiles(this.originalDir, this.translatedDir);
-    
-    return outputFilePath;
+    return translatedFilePath;
   }
   
   /**

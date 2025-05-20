@@ -15,7 +15,7 @@
       "commands": ["ref", "cite", "eqref", "includegraphics", "url", "label", "textit", "textbf", "texttt", "emph", "href", "caption", "footnote", "item"],
       "maskInlineMath": true,
       "maskDisplayMath": true,
-      "maskComments": false,
+      "maskComments": true,
       "maskPrefix": "MASK_"
     }
   },
