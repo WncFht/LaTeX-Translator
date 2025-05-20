@@ -62,6 +62,7 @@ export class ConfigService {
     outputDir: string;
     maskingOptions: Required<MaskingOptions>;
     saveIntermediateFiles: boolean;
+    bypassLLMTranslation: boolean;
   } {
     const defaultMaskOpts: Required<MaskingOptions> = {
       regularEnvironments: ['figure', 'table', 'algorithm', 'enumerate', 'itemize', 'tabular', 'lstlisting'],
@@ -93,6 +94,7 @@ export class ConfigService {
       outputDir: this.get<string>('output.defaultOutputDir', './output'),
       maskingOptions: finalMaskingOptions,
       saveIntermediateFiles: this.get<boolean>('translation.saveIntermediateFiles', true),
+      bypassLLMTranslation: this.get<boolean>('translation.bypassLLMTranslation', true),
     };
   }
 } 

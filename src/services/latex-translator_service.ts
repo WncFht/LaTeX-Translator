@@ -27,6 +27,7 @@ export class LatexTranslatorService { // 重命名此类
   private options: Required<Pick<TranslatorOptions, 'targetLanguage' | 'saveIntermediateFiles' | 'outputDir'> & { 
     maskingOptions: Required<MaskingOptions>; 
     sourceLanguage: string | undefined;
+    bypassLLMTranslation: boolean; // 新增配置项
   }>;
   
   // 注入的服务实例
@@ -70,7 +71,10 @@ export class LatexTranslatorService { // 重命名此类
         ? options.saveIntermediateFiles 
         : defaultTranslatorOptions.saveIntermediateFiles,
       outputDir: options.outputDir || defaultTranslatorOptions.outputDir,
-      maskingOptions: finalMaskingOptions
+      maskingOptions: finalMaskingOptions,
+      bypassLLMTranslation: options.bypassLLMTranslation !== undefined
+        ? options.bypassLLMTranslation
+        : defaultTranslatorOptions.bypassLLMTranslation, // 新增配置项读取
     };
     
     // MaskingService 需要最终的掩码选项
@@ -176,14 +180,20 @@ export class LatexTranslatorService { // 重命名此类
           await this.saveMaskedNodesMap(maskedNodesMap, relativeFilePath);
         }
         
-        console.log(`正在翻译文件: ${relativeFilePath}`);
-        const translatedText = await this.translationService.translateLargeText(
-            maskedText, 
-            this.options.targetLanguage, 
-            this.options.sourceLanguage, 
-            4000, 
-            this.options.saveIntermediateFiles ? path.join(this.logDir, 'translation_log.txt') : undefined
-        );
+        let translatedText: string;
+        if (this.options.bypassLLMTranslation) {
+          console.log(`Bypassing LLM translation for file: ${relativeFilePath}. Returning masked text.`);
+          translatedText = maskedText; // 直接使用掩码文本
+        } else {
+          console.log(`正在翻译文件: ${relativeFilePath}`);
+          translatedText = await this.translationService.translateLargeText(
+              maskedText, 
+              this.options.targetLanguage, 
+              this.options.sourceLanguage, 
+              4000, 
+              this.options.saveIntermediateFiles ? path.join(this.logDir, 'translation_log.txt') : undefined
+          );
+        }
         
         let translatedTextFilePath: string | undefined;
         if (this.options.saveIntermediateFiles) {
@@ -226,13 +236,19 @@ export class LatexTranslatorService { // 重命名此类
     }
     
     console.log('正在翻译文本...');
-    const translatedText = await this.translationService.translateLargeText(
-        maskedText, 
-        this.options.targetLanguage, 
-        this.options.sourceLanguage, 
-        4000, 
-        this.options.saveIntermediateFiles ? path.join(this.logDir, 'translation_log.txt') : undefined
-    );
+    let translatedText: string;
+    if (this.options.bypassLLMTranslation) {
+      console.log(`Bypassing LLM translation for file: ${fileName}. Returning masked text.`);
+      translatedText = maskedText; // 直接使用掩码文本
+    } else {
+      translatedText = await this.translationService.translateLargeText(
+          maskedText, 
+          this.options.targetLanguage, 
+          this.options.sourceLanguage, 
+          4000, 
+          this.options.saveIntermediateFiles ? path.join(this.logDir, 'translation_log.txt') : undefined
+      );
+    }
     
     if (this.options.saveIntermediateFiles) {
       await this.saveTranslatedText(translatedText, fileName);

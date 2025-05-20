@@ -14,6 +14,8 @@ export interface TranslatorOptions {
   saveIntermediateFiles?: boolean;
   // 输出目录
   outputDir?: string;
+  // 是否绕过LLM翻译
+  bypassLLMTranslation?: boolean;
 }
 
 // 从 masker.ts 和 latex-translator.ts (maskingOptions 内部) 提取和合并

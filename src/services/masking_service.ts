@@ -12,6 +12,7 @@ import type {
   Ast,
 } from 'ast-gen';
 import type { MaskingOptions, MaskedNode } from '../types';
+import { toString } from '@unified-latex/unified-latex-util-to-string'; // 假设可以这样导入
 
 export class MaskingService { // 重命名此类
   private options: Required<MaskingOptions>;
@@ -184,7 +185,8 @@ export class MaskingService { // 重命名此类
       return ` <ph id="${maskId}"/> `;
     }
     // 若不掩码，则需要将其内容转换为字符串以包含在文本流中
-    return `$${this.nodesToString(node.content || [])}$`;
+    // 使用 unified-latex 的 toString 函数代替自定义的 nodesToString
+    return `$${toString(node.content || [])}$`;
   }
   
   private processDisplayMath(node: Ast.DisplayMath): string {
@@ -193,7 +195,8 @@ export class MaskingService { // 重命名此类
       this.maskedNodes.set(maskId, { id: maskId, originalContent: node });
       return ` <ph id="${maskId}"/> `;
     }
-    return `\\[${this.nodesToString(node.content || [])}\\]`;
+    // 使用 unified-latex 的 toString 函数代替自定义的 nodesToString
+    return `\\[${toString(node.content || [])}\\]`;
   }
     
   private processComment(node: Ast.Comment): string {

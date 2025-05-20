@@ -22,6 +22,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@unified-latex/unified-latex-util-to-string": "1.8.1",
     "ast-gen": "file:../AST-Gen",
     "axios": "^1.6.0",
     "config": "^4.0.0",

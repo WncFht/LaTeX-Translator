@@ -8,6 +8,7 @@
 // import * as path from 'path'; // 不再需要
 import { Ast } from 'ast-gen'; // ProjectAST 可能不需要了，因为不处理整个项目
 import type { MaskedNode } from '../types';
+import { toString } from '@unified-latex/unified-latex-util-to-string';
 
 export class ReplacementService { // 重命名此类
   private maskedNodesMap: Map<string, MaskedNode>;
@@ -175,7 +176,7 @@ export class ReplacementService { // 重命名此类
   private inlineMathToLatex(node: Ast.Ast): string {
     let content = '';
     if ('content' in node && node.content && Array.isArray(node.content)) {
-      content = this.nodesToLatex(node.content);
+      content = toString(node.content);
     } else if ('content' in node && typeof node.content === 'string') {
       content = node.content as string;
     }
@@ -185,7 +186,7 @@ export class ReplacementService { // 重命名此类
   private displayMathToLatex(node: Ast.Ast): string {
     let content = '';
     if ('content' in node && node.content && Array.isArray(node.content)) {
-      content = this.nodesToLatex(node.content);
+      content = toString(node.content);
     } else if ('content' in node && typeof node.content === 'string') {
       content = node.content as string;
     }
