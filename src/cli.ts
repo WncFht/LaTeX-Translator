@@ -6,25 +6,18 @@
  */
 
 import * as path from 'path';
-import config from 'config';
+// import config from 'config'; // No longer directly used, ConfigService handles it
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import { Translator } from './translator';
-import { LaTeXTranslator, TranslatorOptions } from './latex-translator';
-import { ParserOptions } from 'ast-gen';
-
-// 从配置文件获取默认值，检查配置项是否存在的安全方法
-const getConfigOrDefault = <T>(path: string, defaultValue: T): T => {
-  try {
-    return config.get<T>(path);
-  } catch (error) {
-    return defaultValue;
-  }
-};
+import { ParserService } from './services/parser_service'; 
+import { LatexTranslatorService } from './services/latex-translator_service'; // 更新导入
+import type { TranslatorOptions } from './types'; // OpenAIConfig, MaskingOptions 不再直接被CLI使用
+import { ConfigService } from './services/config_service';
 
 // 主函数
 async function main() {
-  // 解析命令行参数
+  const configService = ConfigService.getInstance(); // Get instance of ConfigService
+
   await yargs(hideBin(process.argv))
     .usage('用法: $0 <命令> [参数]')
     .command('parse <inputPath>', '解析LaTeX文件或项目为AST', (yargs) => {
@@ -37,7 +30,7 @@ async function main() {
           alias: 'output',
           describe: '输出JSON文件的路径',
           type: 'string',
-          default: 'output.json'
+          default: 'output.json' // This default is simple, can remain or move to ConfigService if complex
         })
         .option('p', {
           alias: 'pretty',
@@ -48,7 +41,7 @@ async function main() {
         .option('m', {
           alias: 'macros',
           describe: '包含自定义宏定义的JSON文件的路径',
-          type: 'string'
+          type: 'string' // No default, it's optional
         })
         .option('n', {
           alias: 'no-default-macros',
@@ -68,51 +61,51 @@ async function main() {
         .option('api-key', {
           describe: 'OpenAI API密钥',
           type: 'string',
-          default: getConfigOrDefault('openai.apiKey', ''),
+          default: configService.getOpenAIConfig().apiKey || '', 
           defaultDescription: '配置文件中的值'
         })
         .option('base-url', {
           describe: 'OpenAI API基础URL',
           type: 'string',
-          default: getConfigOrDefault('openai.baseUrl', 'https://api.openai.com/v1'),
+          default: configService.getOpenAIConfig().baseUrl || 'https://api.openai.com/v1', 
           defaultDescription: '配置文件中的值'
         })
         .option('model', {
           describe: 'OpenAI模型',
           type: 'string',
-          default: getConfigOrDefault('openai.model', 'gpt-3.5-turbo'),
+          default: configService.getOpenAIConfig().model || 'gpt-3.5-turbo', 
           defaultDescription: '配置文件中的值'
         })
         .option('target-lang', {
           describe: '目标语言',
           type: 'string',
-          default: getConfigOrDefault('translation.defaultTargetLanguage', '简体中文'),
+          default: configService.getDefaultTranslatorOptions().targetLanguage, 
           defaultDescription: '配置文件中的值'
         })
         .option('source-lang', {
           describe: '源语言',
           type: 'string',
-          default: getConfigOrDefault('translation.defaultSourceLanguage', undefined),
+          default: configService.getDefaultTranslatorOptions().sourceLanguage, 
           defaultDescription: '配置文件中的值'
         })
         .option('o', {
           alias: 'output-dir',
           describe: '输出基础目录（将在其中创建项目子目录）',
           type: 'string',
-          default: getConfigOrDefault('output.defaultOutputDir', './output'),
+          default: configService.getDefaultTranslatorOptions().outputDir, 
           defaultDescription: '配置文件中的值'
         })
         .option('temp', {
           alias: 'temperature',
           describe: '模型温度参数 (0-1)',
           type: 'number',
-          default: getConfigOrDefault('openai.temperature', 0.3),
+          default: configService.getOpenAIConfig().temperature ?? 0.3, // Use ?? for potentially undefined values from getOpenAIConfig
           defaultDescription: '配置文件中的值'
         })
         .option('mask-env', {
           describe: '要掩码的普通环境，用逗号分隔',
           type: 'string',
-          defaultDescription: '配置文件中的值'
+          defaultDescription: '配置文件中的值' // Default comes from merged options in LaTeXTranslator constructor
         })
         .option('mask-math-env', {
           describe: '要掩码的数学环境，用逗号分隔',
@@ -127,7 +120,7 @@ async function main() {
         .option('no-mask-math', {
           describe: '不掩码数学公式',
           type: 'boolean',
-          default: !getConfigOrDefault('translation.maskOptions.maskInlineMath', true),
+          default: !configService.getDefaultTranslatorOptions().maskingOptions.maskInlineMath, 
           defaultDescription: '配置文件中的值'
         });
     }, async (argv) => {
@@ -156,18 +149,13 @@ async function main() {
 async function handleParseCommand(argv: any): Promise<void> {
   const inputPath = argv.inputPath as string;
   const outputPath = path.resolve(argv.output as string);
-
-  // 创建翻译器实例
-  const translator = new Translator();
-
+  const parser = new ParserService(); // 实例化 ParserService
   try {
-    // 解析并保存
-    await translator.parseAndSave(inputPath, outputPath, {
+    await parser.parseAndSave(inputPath, outputPath, {
       pretty: argv.pretty as boolean,
       macrosFile: argv.macros as string | undefined,
       loadDefaultMacros: !(argv['no-default-macros'] as boolean)
     });
-    
     console.log(`AST已保存到: ${outputPath}`);
     console.log('处理完成！');
   } catch (error) {
@@ -182,9 +170,9 @@ async function handleParseCommand(argv: any): Promise<void> {
  */
 async function handleTranslateCommand(argv: any): Promise<void> {
   try {
-    // 准备翻译器选项
+    // 构造 TranslatorOptions，这是传递给 LatexTranslatorService 的选项对象
     const translatorOptions: TranslatorOptions = {
-      openaiConfig: {
+      openaiConfig: { // 从 argv 直接构造 OpenAIConfig
         apiKey: argv['api-key'] as string,
         baseUrl: argv['base-url'] as string,
         model: argv.model as string,
@@ -193,35 +181,31 @@ async function handleTranslateCommand(argv: any): Promise<void> {
       targetLanguage: argv['target-lang'] as string,
       sourceLanguage: argv['source-lang'] as string | undefined,
       outputDir: argv['output-dir'] as string,
+      // maskingOptions 将由用户命令行参数或 ConfigService 的默认值（在 LatexTranslatorService 内部处理）提供
+      // 这里仅传递用户显式设置的掩码选项
       maskingOptions: {}
     };
 
-    // 获取掩码环境和命令（如果提供）
     if (argv['mask-env']) {
       translatorOptions.maskingOptions!.regularEnvironments = 
         (argv['mask-env'] as string).split(',').map((env: string) => env.trim());
     }
-
     if (argv['mask-math-env']) {
       translatorOptions.maskingOptions!.mathEnvironments = 
         (argv['mask-math-env'] as string).split(',').map((env: string) => env.trim());
     }
-
     if (argv['mask-cmd']) {
       translatorOptions.maskingOptions!.maskCommands = 
         (argv['mask-cmd'] as string).split(',').map((cmd: string) => cmd.trim());
     }
-
-    // 设置是否掩码数学公式
     if (argv['no-mask-math'] !== undefined) {
+      // 确保 maskingOptions 存在
+      if (!translatorOptions.maskingOptions) translatorOptions.maskingOptions = {};
       translatorOptions.maskingOptions!.maskInlineMath = !argv['no-mask-math'];
       translatorOptions.maskingOptions!.maskDisplayMath = !argv['no-mask-math'];
     }
     
-    // 创建翻译器实例
-    const translator = new LaTeXTranslator(translatorOptions);
-    
-    // 执行翻译
+    const translator = new LatexTranslatorService(translatorOptions); // 实例化新的 Service
     const outputPath = await translator.translate(argv.inputPath as string);
     
     console.log('\n翻译完成！');
