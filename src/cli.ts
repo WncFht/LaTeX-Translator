@@ -97,7 +97,7 @@ async function main() {
         })
         .option('o', {
           alias: 'output-dir',
-          describe: '输出目录',
+          describe: '输出基础目录（将在其中创建项目子目录）',
           type: 'string',
           default: getConfigOrDefault('output.defaultOutputDir', './output'),
           defaultDescription: '配置文件中的值'
@@ -110,7 +110,12 @@ async function main() {
           defaultDescription: '配置文件中的值'
         })
         .option('mask-env', {
-          describe: '要掩码的环境，用逗号分隔',
+          describe: '要掩码的普通环境，用逗号分隔',
+          type: 'string',
+          defaultDescription: '配置文件中的值'
+        })
+        .option('mask-math-env', {
+          describe: '要掩码的数学环境，用逗号分隔',
           type: 'string',
           defaultDescription: '配置文件中的值'
         })
@@ -131,7 +136,15 @@ async function main() {
     .demandCommand(1, '请指定一个命令: parse 或 translate')
     .help('h')
     .alias('h', 'help')
-    .epilogue('更多信息请参考README.md')
+    .epilogue(`更多信息请参考README.md
+
+翻译后的文件组织结构:
+  output/
+    <项目名>/         - 以输入文件或文件夹名称命名的项目目录
+      original/       - 包含原始文件的目录
+      translated/     - 包含翻译后文件的目录（可直接编译）
+      log/            - 包含中间过程文件和日志的目录
+`)
     .wrap(yargs.terminalWidth())
     .parse();
 }
@@ -185,8 +198,13 @@ async function handleTranslateCommand(argv: any): Promise<void> {
 
     // 获取掩码环境和命令（如果提供）
     if (argv['mask-env']) {
-      translatorOptions.maskingOptions!.maskEnvironments = 
+      translatorOptions.maskingOptions!.regularEnvironments = 
         (argv['mask-env'] as string).split(',').map((env: string) => env.trim());
+    }
+
+    if (argv['mask-math-env']) {
+      translatorOptions.maskingOptions!.mathEnvironments = 
+        (argv['mask-math-env'] as string).split(',').map((env: string) => env.trim());
     }
 
     if (argv['mask-cmd']) {
@@ -204,7 +222,12 @@ async function handleTranslateCommand(argv: any): Promise<void> {
     const translator = new LaTeXTranslator(translatorOptions);
     
     // 执行翻译
-    await translator.translate(argv.inputPath as string);
+    const outputPath = await translator.translate(argv.inputPath as string);
+    
+    console.log('\n翻译完成！');
+    console.log(`项目根目录: ${path.dirname(outputPath)}`);
+    console.log(`翻译后文件: ${outputPath}`);
+    console.log('你可以在翻译后的目录中直接编译LaTeX文件');
     
   } catch (error) {
     console.error('翻译过程中出错:', error);

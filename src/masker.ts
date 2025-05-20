@@ -13,8 +13,10 @@ import {
 } from 'ast-gen';
 
 interface MaskingOptions {
-  // 需要掩码的环境类型
-  maskEnvironments?: string[];
+  // 需要掩码的普通环境类型
+  regularEnvironments?: string[];
+  // 需要掩码的数学环境类型
+  mathEnvironments?: string[];
   // 需要掩码的命令
   maskCommands?: string[];
   // 需要掩码的内联数学
@@ -40,8 +42,9 @@ export class Masker {
   constructor(options: MaskingOptions = {}) {
     // 默认选项
     this.options = {
-      maskEnvironments: ['equation', 'align', 'figure', 'table', 'algorithm'],
-      maskCommands: ['ref', 'cite', 'includegraphics', 'url'],
+      regularEnvironments: ['figure', 'table', 'algorithm', 'enumerate', 'itemize', 'tabular', 'lstlisting'],
+      mathEnvironments: ['equation', 'align', 'gather', 'multline', 'eqnarray', 'matrix', 'pmatrix', 'bmatrix', 'array', 'aligned', 'cases', 'split'],
+      maskCommands: ['ref', 'cite', 'eqref', 'includegraphics', 'url', 'label', 'textit', 'textbf', 'texttt', 'emph', 'href', 'caption', 'footnote', 'item'],
       maskInlineMath: true,
       maskDisplayMath: true,
       maskComments: false,
@@ -168,6 +171,16 @@ export class Masker {
           result += this.processDisplayMath(node);
           break;
           
+        case 'mathenv':
+          // 处理数学环境（如align, equation等）
+          result += this.processMathEnv(node);
+          break;
+          
+        case 'verbatim':
+          // 处理原始环境，如代码块
+          result += this.processVerbatim(node);
+          break;
+          
         default:
           // 处理非标准类型（如math.inline、math.display等）
           if (nodeType === 'math.inline') {
@@ -241,16 +254,31 @@ export class Masker {
     // 确保node有env属性
     if (!('env' in node)) return '';
     
-    const env = (node as any).env as string;
+    // 获取环境名称，处理不同的数据结构
+    let envName = '';
+    const envAttr = (node as any).env;
     
-    // 数学相关环境列表
-    const mathEnvironments = ['equation', 'align', 'gather', 'multline', 'eqnarray', 'matrix', 'pmatrix', 'bmatrix', 'array'];
+    if (typeof envAttr === 'string') {
+      envName = envAttr;
+    } else if (typeof envAttr === 'object' && envAttr !== null) {
+      if ('content' in envAttr) {
+        envName = envAttr.content as string;
+      } else if ('type' in envAttr && envAttr.type === 'string' && 'content' in envAttr) {
+        envName = envAttr.content as string;
+      }
+    }
+    
+    // 如果无法获取环境名称，返回空字符串
+    if (!envName) {
+      console.warn('无法确定环境名称:', node);
+      return '';
+    }
     
     // 检查是否是数学环境且需要掩码
-    const isMathEnv = mathEnvironments.includes(env);
+    const isMathEnv = this.options.mathEnvironments && this.options.mathEnvironments.includes(envName);
     
     if ((isMathEnv && this.options.maskDisplayMath) || 
-        (this.options.maskEnvironments && this.options.maskEnvironments.includes(env))) {
+        (this.options.regularEnvironments && this.options.regularEnvironments.includes(envName))) {
       // 创建掩码ID，为数学环境使用特殊前缀
       const maskId = this.generateMaskId(isMathEnv ? 'MATH_ENV' : 'ENV');
       
@@ -264,7 +292,7 @@ export class Masker {
     }
     
     // 处理环境头部
-    let result = `\\begin{${env}}`;
+    let result = `\\begin{${envName}}`;
     
     // 添加可能的环境参数
     if ('args' in node && node.args && Array.isArray(node.args)) {
@@ -277,7 +305,7 @@ export class Masker {
     }
     
     // 处理环境尾部
-    result += `\\end{${env}}`;
+    result += `\\end{${envName}}`;
     
     return result;
   }
@@ -349,6 +377,75 @@ export class Masker {
       return content; // 对于环境的一部分，不添加分隔符
     }
     return `\\[${content}\\]`;
+  }
+  
+  /**
+   * 处理数学环境（如align, equation等）
+   * @param node 数学环境节点
+   * @returns 处理后的文本
+   */
+  private processMathEnv(node: AstTypes.Ast): string {
+    // 确保node有env属性
+    if (!('env' in node)) return '';
+    
+    // 获取环境名称，处理不同的数据结构
+    let envName = '';
+    const envAttr = (node as any).env;
+    
+    if (typeof envAttr === 'string') {
+      envName = envAttr;
+    } else if (typeof envAttr === 'object' && envAttr !== null) {
+      if ('content' in envAttr) {
+        envName = envAttr.content as string;
+      } else if ('type' in envAttr && envAttr.type === 'string' && 'content' in envAttr) {
+        envName = envAttr.content as string;
+      }
+    }
+    
+    // 如果无法获取环境名称，返回空字符串
+    if (!envName) {
+      console.warn('无法确定数学环境名称:', node);
+      return '';
+    }
+    
+    // 检查是否属于配置的数学环境
+    const isMathEnv = this.options.mathEnvironments && this.options.mathEnvironments.includes(envName);
+    
+    // 对于数学环境，直接进行掩码处理
+    if (isMathEnv && this.options.maskDisplayMath) {
+      // 创建掩码ID
+      const maskId = this.generateMaskId('MATH_ENV');
+      
+      // 存储原始节点
+      this.maskedNodes.set(maskId, {
+        id: maskId,
+        originalContent: node
+      });
+      
+      // 使用显著的标记使掩码更明显
+      return ` ${this.options.maskPrefix}${maskId} `;
+    }
+    
+    // 如果不掩码，处理环境内容
+    let result = '';
+    
+    // 添加环境开始标记
+    result += `\\begin{${envName}}`;
+    
+    // 添加可能的环境参数
+    if ('args' in node && node.args && Array.isArray(node.args)) {
+      result += this.processArgs(node.args);
+    }
+    
+    // 处理环境内容
+    if ('content' in node && node.content && Array.isArray(node.content)) {
+      result += this.processNodes(node.content);
+    }
+    
+    // 添加环境结束标记
+    result += `\\end{${envName}}`;
+    
+    return result;
   }
   
   /**
@@ -466,5 +563,24 @@ export class Masker {
     // 写入文件
     await fs.writeFile(outputPath, JSON.stringify(maskedNodesObj, null, 2), 'utf8');
     console.log(`掩码节点映射已保存到: ${outputPath}`);
+  }
+  
+  /**
+   * 处理原始环境（verbatim）
+   * @param node verbatim节点
+   * @returns 处理后的文本
+   */
+  private processVerbatim(node: AstTypes.Ast): string {
+    // 创建掩码ID
+    const maskId = this.generateMaskId('VERBATIM');
+    
+    // 存储原始节点
+    this.maskedNodes.set(maskId, {
+      id: maskId,
+      originalContent: node
+    });
+    
+    // 使用显著的标记使掩码更明显
+    return ` ${this.options.maskPrefix}${maskId} `;
   }
 } 

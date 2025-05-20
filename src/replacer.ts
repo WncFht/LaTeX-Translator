@@ -158,25 +158,108 @@ export class Replacer {
     const nodeType = node.type.toString();
     
     switch (nodeType) {
-      case 'macro':
-        return this.macroToLatex(node as AstTypes.Macro);
-        
-      case 'environment':
-        return this.environmentToLatex(node);
-        
-      case 'inlinemath':
-        return this.inlineMathToLatex(node);
-        
-      case 'displaymath':
-        return this.displayMathToLatex(node);
-        
+      case 'root':
+        // 根节点处理
+        return 'content' in node && Array.isArray(node.content) ? 
+          this.nodesToLatex(node.content) : '';
+      
+      case 'string':
+        // 字符串节点处理
+        if ('content' in node) {
+          const content = node.content as string;
+          // 特殊处理对齐符号等特殊字符
+          if (content === '&') {
+            return '&';
+          }
+          return content;
+        }
+        return '';
+      
+      case 'whitespace':
+        // 空白节点处理
+        return ' ';
+      
+      case 'parbreak':
+        // 段落分隔符节点处理
+        return '\n\n';
+      
       case 'comment':
+        // 注释节点处理
         return 'content' in node && typeof node.content === 'string' ? 
           `%${node.content}\n` : '';
-        
-      case 'whitespace':
-        return ' ';
-        
+      
+      case 'macro':
+        // 宏节点处理
+        return this.macroToLatex(node as AstTypes.Macro);
+      
+      case 'environment':
+      case 'mathenv':
+        // 环境节点处理
+        return this.environmentToLatex(node);
+      
+      case 'verbatim':
+        // 原始环境节点处理
+        if ('env' in node && 'content' in node) {
+          const env = (node as any).env as string;
+          const content = (node as any).content as string;
+          let args = '';
+          
+          // 处理可能的环境参数，如语言选项
+          if ('args' in node && Array.isArray(node.args) && node.args.length > 0) {
+            for (const arg of node.args) {
+              if (arg.type === 'argument') {
+                const argument = arg as AstTypes.Argument;
+                const openMark = argument.openMark || '';
+                const closeMark = argument.closeMark || '';
+                
+                if (Array.isArray(argument.content)) {
+                  args += `${openMark}${this.nodesToLatex(argument.content)}${closeMark}`;
+                } else if (typeof argument.content === 'string') {
+                  args += `${openMark}${argument.content}${closeMark}`;
+                } else {
+                  args += `${openMark}${closeMark}`;
+                }
+              }
+            }
+          }
+          
+          return `\\begin{${env}}${args}${content}\\end{${env}}`;
+        }
+        return '';
+      
+      case 'inlinemath':
+        // 行内数学节点处理
+        return this.inlineMathToLatex(node);
+      
+      case 'displaymath':
+        // 行间数学节点处理
+        return this.displayMathToLatex(node);
+      
+      case 'group':
+        // 分组节点处理
+        if ('content' in node && Array.isArray(node.content)) {
+          return `{${this.nodesToLatex(node.content)}}`;
+        }
+        return '{}';
+      
+      case 'verb':
+        // 原始文本节点处理
+        if ('env' in node && 'escape' in node && 'content' in node) {
+          const escape = (node as any).escape as string;
+          const content = (node as any).content as string;
+          return `\\verb${escape}${content}${escape}`;
+        }
+        return '';
+      
+      case 'argument':
+        // 参数节点处理
+        if ('content' in node && Array.isArray(node.content) &&
+            'openMark' in node && 'closeMark' in node) {
+          const arg = node as AstTypes.Argument;
+          return `${arg.openMark}${this.nodesToLatex(arg.content)}${arg.closeMark}`;
+        }
+        return '';
+      
       default:
         // 处理非标准类型（如math.inline、math.display等）
         if (nodeType === 'math.inline') {
@@ -203,6 +286,15 @@ export class Replacer {
     let result = '';
     
     for (const node of nodes) {
+      if (!node) continue;
+      
+      // 如果node是数组，递归处理
+      if (Array.isArray(node)) {
+        result += this.nodesToLatex(node);
+        continue;
+      }
+      
+      // 所有节点类型都由nodeToLatex处理
       result += this.nodeToLatex(node);
     }
     
@@ -215,6 +307,32 @@ export class Replacer {
    * @returns LaTeX代码
    */
   private macroToLatex(node: AstTypes.Macro): string {
+    // 数学环境中的特殊字符无需转义
+    const mathSpecialChars = ["^", "_"];
+    if (mathSpecialChars.includes(node.content)) {
+      let result = node.content;
+      // 处理参数
+      if (node.args && Array.isArray(node.args)) {
+        for (const arg of node.args) {
+          if (arg.type === 'argument') {
+            const argument = arg as AstTypes.Argument;
+            const openMark = argument.openMark || '';
+            const closeMark = argument.closeMark || '';
+            
+            if (Array.isArray(argument.content)) {
+              result += `${openMark}${this.nodesToLatex(argument.content)}${closeMark}`;
+            } else if (typeof argument.content === 'string') {
+              result += `${openMark}${argument.content}${closeMark}`;
+            } else {
+              result += `${openMark}${closeMark}`;
+            }
+          }
+        }
+      }
+      return result;
+    }
+    
+    // 其他宏正常处理
     let result = `\\${node.content}`;
     
     // 添加参数
@@ -248,9 +366,27 @@ export class Replacer {
     // 确保node有env属性
     if (!('env' in node)) return '';
     
-    const env = (node as any).env as string;
+    let envName = '';
+    const envAttr = (node as any).env;
     
-    let result = `\\begin{${env}}`;
+    // 处理不同结构的env属性
+    if (typeof envAttr === 'string') {
+      envName = envAttr;
+    } else if (typeof envAttr === 'object' && envAttr !== null) {
+      if ('content' in envAttr) {
+        envName = envAttr.content as string;
+      } else if ('type' in envAttr && envAttr.type === 'string' && 'content' in envAttr) {
+        envName = envAttr.content as string;
+      }
+    }
+    
+    // 如果无法获取环境名称，记录警告并返回空字符串
+    if (!envName) {
+      console.warn('无法确定环境名称:', node);
+      return '';
+    }
+    
+    let result = `\\begin{${envName}}`;
     
     // 添加环境参数
     if ('args' in node && node.args && Array.isArray(node.args)) {
@@ -271,13 +407,19 @@ export class Replacer {
       }
     }
     
-    // 添加环境内容
+    // 添加环境内容，确保处理换行和空格
     if ('content' in node && node.content && Array.isArray(node.content)) {
-      result += this.nodesToLatex(node.content);
+      // 对于align环境等需要特别处理换行和对齐符号
+      if (envName === 'align' || envName === 'align*' || envName === 'aligned') {
+        // 特殊处理对齐环境
+        result += '\n' + this.nodesToLatex(node.content);
+      } else {
+        result += this.nodesToLatex(node.content);
+      }
     }
     
-    // 添加环境结束标记
-    result += `\\end{${env}}`;
+    // 添加环境结束标记，确保换行
+    result += `\\end{${envName}}`;
     
     return result;
   }
