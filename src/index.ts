@@ -14,4 +14,4 @@ export { Replacer } from './replacer';
 export { OpenAIClient, OpenAIConfig } from './openai-client';
 
 // 导出AST-Gen的类型
-export { ProjectAST, ParserOptions, ProjectFileAst, AstTypes } from 'ast-gen'; 
+export { ProjectAST, ParserOptions, ProjectFileAst, Ast } from 'ast-gen'; 

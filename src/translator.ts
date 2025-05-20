@@ -11,7 +11,7 @@ import {
   serializeProjectAstToJson,
   ProjectAST,
   ParserOptions,
-  AstTypes
+  Ast
 } from 'ast-gen';
 
 export class Translator {

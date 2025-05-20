@@ -6,10 +6,10 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import {
+import type {
   ProjectAST,
   ProjectFileAst,
-  AstTypes
+  Ast,
 } from 'ast-gen';
 
 interface MaskingOptions {
@@ -31,7 +31,7 @@ interface MaskingOptions {
 
 interface MaskedNode {
   id: string;
-  originalContent: AstTypes.Ast;
+  originalContent: Ast.Ast;
 }
 
 export class Masker {
@@ -112,7 +112,7 @@ export class Masker {
    * @param nodes 节点数组
    * @returns 处理后的文本
    */
-  private processNodes(nodes: AstTypes.Ast[]): string {
+  private processNodes(nodes: Ast.Ast[]): string {
     let result = '';
     
     for (const node of nodes) {
@@ -120,7 +120,7 @@ export class Masker {
       
       // 如果node是数组，递归处理
       if (Array.isArray(node)) {
-        result += this.processNodes(node);
+        result += this.processNodes(node as Ast.Ast[]);
         continue;
       }
       
@@ -133,7 +133,7 @@ export class Masker {
       switch (nodeType) {
         case 'string':
           // 直接添加文本
-          result += (node as AstTypes.String).content;
+          result += (node as Ast.String).content;
           break;
           
         case 'whitespace':
@@ -148,45 +148,45 @@ export class Masker {
           
         case 'comment':
           // 处理注释
-          result += this.processComment(node);
+          result += this.processComment(node as Ast.Comment);
           break;
           
         case 'macro':
           // 处理宏命令
-          result += this.processMacro(node as AstTypes.Macro);
+          result += this.processMacro(node as Ast.Macro);
           break;
           
         case 'environment':
           // 处理环境
-          result += this.processEnvironment(node);
+          result += this.processEnvironment(node as Ast.Environment);
           break;
           
         case 'inlinemath':
           // 处理内联数学
-          result += this.processInlineMath(node);
+          result += this.processInlineMath(node as Ast.InlineMath);
           break;
           
         case 'displaymath':
           // 处理行间数学
-          result += this.processDisplayMath(node);
+          result += this.processDisplayMath(node as Ast.DisplayMath);
           break;
           
         case 'mathenv':
           // 处理数学环境（如align, equation等）
-          result += this.processMathEnv(node);
+          result += this.processMathEnv(node as Ast.Environment);
           break;
           
         case 'verbatim':
           // 处理原始环境，如代码块
-          result += this.processVerbatim(node);
+          result += this.processVerbatim(node as Ast.VerbatimEnvironment);
           break;
           
         default:
           // 处理非标准类型（如math.inline、math.display等）
           if (nodeType === 'math.inline') {
-            result += this.processInlineMath(node);
+            result += this.processInlineMath(node as Ast.InlineMath);
           } else if (nodeType === 'math.display') {
-            result += this.processDisplayMath(node);
+            result += this.processDisplayMath(node as Ast.DisplayMath);
           } 
           // 递归处理其他类型的节点
           else if ('content' in node && Array.isArray(node.content)) {
@@ -205,7 +205,7 @@ export class Masker {
    * @param node 宏命令节点
    * @returns 处理后的文本
    */
-  private processMacro(node: AstTypes.Macro): string {
+  private processMacro(node: Ast.Macro): string {
     // 检查是否需要掩码这个命令
     if (this.options.maskCommands && 
         this.options.maskCommands.includes(node.content)) {
@@ -250,7 +250,7 @@ export class Masker {
    * @param node 环境节点
    * @returns 处理后的文本
    */
-  private processEnvironment(node: AstTypes.Ast): string {
+  private processEnvironment(node: Ast.Environment): string {
     // 确保node有env属性
     if (!('env' in node)) return '';
     
@@ -315,7 +315,7 @@ export class Masker {
    * @param node 内联数学节点
    * @returns 处理后的文本
    */
-  private processInlineMath(node: AstTypes.Ast): string {
+  private processInlineMath(node: Ast.InlineMath): string {
     if (this.options.maskInlineMath) {
       // 创建掩码ID
       const maskId = this.generateMaskId('IMATH');
@@ -345,7 +345,7 @@ export class Masker {
    * @param node 行间数学节点
    * @returns 处理后的文本
    */
-  private processDisplayMath(node: AstTypes.Ast): string {
+  private processDisplayMath(node: Ast.DisplayMath): string {
     if (this.options.maskDisplayMath) {
       // 创建掩码ID
       const maskId = this.generateMaskId('DMATH');
@@ -384,7 +384,7 @@ export class Masker {
    * @param node 数学环境节点
    * @returns 处理后的文本
    */
-  private processMathEnv(node: AstTypes.Ast): string {
+  private processMathEnv(node: Ast.Environment): string {
     // 确保node有env属性
     if (!('env' in node)) return '';
     
@@ -453,7 +453,7 @@ export class Masker {
    * @param node 注释节点
    * @returns 处理后的文本
    */
-  private processComment(node: AstTypes.Ast): string {
+  private processComment(node: Ast.Comment): string {
     if (this.options.maskComments) {
       // 创建掩码ID
       const maskId = this.generateMaskId('COMMENT');
@@ -480,7 +480,7 @@ export class Masker {
    * @param args 参数数组
    * @returns 处理后的文本
    */
-  private processArgs(args: AstTypes.Ast[]): string {
+  private processArgs(args: Ast.Argument[]): string {
     if (!args || !Array.isArray(args)) return '';
     
     let result = '';
@@ -499,7 +499,7 @@ export class Masker {
       
       // 处理不同类型的参数
       if (arg.type === 'argument') {
-        const argument = arg as AstTypes.Argument;
+        const argument = arg as Ast.Argument;
         const openMark = argument.openMark || '';
         const closeMark = argument.closeMark || '';
         
@@ -570,7 +570,7 @@ export class Masker {
    * @param node verbatim节点
    * @returns 处理后的文本
    */
-  private processVerbatim(node: AstTypes.Ast): string {
+  private processVerbatim(node: Ast.VerbatimEnvironment): string {
     // 创建掩码ID
     const maskId = this.generateMaskId('VERBATIM');
     

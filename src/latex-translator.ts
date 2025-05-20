@@ -7,11 +7,17 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import config from 'config';
-import { parseLatexProject, ProjectAST, AstTypes, serializeProjectAstToJson, findRootFile, isTexFile, ProjectFileAst } from 'ast-gen';
+import { parseLatexProject, ProjectAST, Ast, serializeProjectAstToJson, findRootFile, /* isTexFile, */ ProjectFileAst } from 'ast-gen';
 import { Masker } from './masker';
 import { OpenAIClient, OpenAIConfig } from './openai-client';
 import { Replacer } from './replacer';
 import { Translator } from './translator';
+
+// 因为 isTexFile 不再从 ast-gen 导出，在此处提供一个简单的实现
+function isTexFile(filePath: string, extensions: string[] = ['.tex', '.ltx', '.latex']): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return extensions.includes(ext);
+}
 
 export interface TranslatorOptions {
   // OpenAI配置
@@ -575,7 +581,7 @@ export class LaTeXTranslator {
    * @returns 保存的文件路径
    */
   private async saveMaskedNodesMap(
-    maskedNodesMap: Map<string, { id: string; originalContent: AstTypes.Ast }>,
+    maskedNodesMap: Map<string, { id: string; originalContent: Ast.Ast }>,
     fileIdentifier: string
   ): Promise<string> {
     // 创建包含路径信息的文件名，替换路径分隔符为下划线
@@ -585,7 +591,18 @@ export class LaTeXTranslator {
     const mapFilePath = path.join(this.logDir, `${safeIdentifier}_masked_map.json`);
     
     // 保存掩码节点映射
-    await this.masker.saveMaskedNodesMap(mapFilePath);
+    const maskedNodesObj: Record<string, any> = {};
+    maskedNodesMap.forEach((node, key) => {
+      maskedNodesObj[key] = {
+        id: node.id,
+        originalContent: node.originalContent // originalContent 类型是 Ast.Ast
+      };
+    });
+    await fs.writeFile(mapFilePath, JSON.stringify(maskedNodesObj, null, 2), 'utf8');
+    
+    if (this.options.saveIntermediateFiles) {
+        console.log(`掩码节点映射已保存到: ${mapFilePath}`);
+    }
     
     return mapFilePath;
   }

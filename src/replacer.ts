@@ -6,11 +6,11 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { ProjectAST, AstTypes } from 'ast-gen';
+import { ProjectAST, Ast } from 'ast-gen';
 
 interface MaskedNode {
   id: string;
-  originalContent: AstTypes.Ast;
+  originalContent: Ast.Ast;
 }
 
 export class Replacer {
@@ -40,7 +40,7 @@ export class Replacer {
       const maskedNodesMap = new Map<string, MaskedNode>();
       
       // 需要遍历原始AST，根据节点ID找到原始内容
-      const nodesById = new Map<string, AstTypes.Ast>();
+      const nodesById = new Map<string, Ast.Ast>();
       
       // 提取所有节点
       for (const fileAst of originalAst.files) {
@@ -75,7 +75,7 @@ export class Replacer {
    * @param nodes 节点数组
    * @param nodesById 按ID存储的节点映射
    */
-  private static extractAllNodes(nodes: AstTypes.Ast[], nodesById: Map<string, AstTypes.Ast>): void {
+  private static extractAllNodes(nodes: Ast.Ast[], nodesById: Map<string, Ast.Ast>): void {
     for (const node of nodes) {
       if (!node) continue;
       
@@ -143,7 +143,7 @@ export class Replacer {
    * @param node AST节点
    * @returns LaTeX代码
    */
-  private nodeToLatex(node: AstTypes.Ast): string {
+  private nodeToLatex(node: Ast.Ast): string {
     if (!node) return '';
     
     // 如果node是数组，处理数组中的每个节点
@@ -190,7 +190,7 @@ export class Replacer {
       
       case 'macro':
         // 宏节点处理
-        return this.macroToLatex(node as AstTypes.Macro);
+        return this.macroToLatex(node as Ast.Macro);
       
       case 'environment':
       case 'mathenv':
@@ -208,7 +208,7 @@ export class Replacer {
           if ('args' in node && Array.isArray(node.args) && node.args.length > 0) {
             for (const arg of node.args) {
               if (arg.type === 'argument') {
-                const argument = arg as AstTypes.Argument;
+                const argument = arg as Ast.Argument;
                 const openMark = argument.openMark || '';
                 const closeMark = argument.closeMark || '';
                 
@@ -255,7 +255,7 @@ export class Replacer {
         // 参数节点处理
         if ('content' in node && Array.isArray(node.content) &&
             'openMark' in node && 'closeMark' in node) {
-          const arg = node as AstTypes.Argument;
+          const arg = node as Ast.Argument;
           return `${arg.openMark}${this.nodesToLatex(arg.content)}${arg.closeMark}`;
         }
         return '';
@@ -282,7 +282,7 @@ export class Replacer {
    * @param nodes 节点数组
    * @returns LaTeX代码
    */
-  private nodesToLatex(nodes: AstTypes.Ast[]): string {
+  private nodesToLatex(nodes: Ast.Ast[]): string {
     let result = '';
     
     for (const node of nodes) {
@@ -306,7 +306,7 @@ export class Replacer {
    * @param node 宏命令节点
    * @returns LaTeX代码
    */
-  private macroToLatex(node: AstTypes.Macro): string {
+  private macroToLatex(node: Ast.Macro): string {
     // 数学环境中的特殊字符无需转义
     const mathSpecialChars = ["^", "_"];
     if (mathSpecialChars.includes(node.content)) {
@@ -315,7 +315,7 @@ export class Replacer {
       if (node.args && Array.isArray(node.args)) {
         for (const arg of node.args) {
           if (arg.type === 'argument') {
-            const argument = arg as AstTypes.Argument;
+            const argument = arg as Ast.Argument;
             const openMark = argument.openMark || '';
             const closeMark = argument.closeMark || '';
             
@@ -339,7 +339,7 @@ export class Replacer {
     if (node.args && Array.isArray(node.args)) {
       for (const arg of node.args) {
         if (arg.type === 'argument') {
-          const argument = arg as AstTypes.Argument;
+          const argument = arg as Ast.Argument;
           const openMark = argument.openMark || '';
           const closeMark = argument.closeMark || '';
           
@@ -362,7 +362,7 @@ export class Replacer {
    * @param node 环境节点
    * @returns LaTeX代码
    */
-  private environmentToLatex(node: AstTypes.Ast): string {
+  private environmentToLatex(node: Ast.Ast): string {
     // 确保node有env属性
     if (!('env' in node)) return '';
     
@@ -392,7 +392,7 @@ export class Replacer {
     if ('args' in node && node.args && Array.isArray(node.args)) {
       for (const arg of node.args) {
         if (arg.type === 'argument') {
-          const argument = arg as AstTypes.Argument;
+          const argument = arg as Ast.Argument;
           const openMark = argument.openMark || '';
           const closeMark = argument.closeMark || '';
           
@@ -429,7 +429,7 @@ export class Replacer {
    * @param node 内联数学节点
    * @returns LaTeX代码
    */
-  private inlineMathToLatex(node: AstTypes.Ast): string {
+  private inlineMathToLatex(node: Ast.Ast): string {
     let content = '';
     
     if ('content' in node && node.content && Array.isArray(node.content)) {
@@ -446,7 +446,7 @@ export class Replacer {
    * @param node 行间数学节点
    * @returns LaTeX代码
    */
-  private displayMathToLatex(node: AstTypes.Ast): string {
+  private displayMathToLatex(node: Ast.Ast): string {
     let content = '';
     
     if ('content' in node && node.content && Array.isArray(node.content)) {
