@@ -240,7 +240,7 @@ output/
 
 ## 依赖项
 
-- [AST-Gen](../AST-Gen): LaTeX AST生成器库
+- [AST-Gen](https://github.com/WncFht/LaTeX-Ast-Gen): LaTeX AST生成器库
 - [openai](https://github.com/openai/openai-node): OpenAI官方Node.js客户端
 - [config](https://github.com/node-config/node-config): 配置管理库
 - [yargs](https://yargs.js.org/): 命令行参数解析 
