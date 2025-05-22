@@ -244,3 +244,18 @@ output/
 - [openai](https://github.com/openai/openai-node): OpenAI官方Node.js客户端
 - [config](https://github.com/node-config/node-config): 配置管理库
 - [yargs](https://yargs.js.org/): 命令行参数解析 
+
+
+## TODO
+
+- [] 写文档
+- [] 写测试
+- [] 添加对 environment / mathenv / verbatim 的更细粒度的支持
+- [] 增加更多后处理
+- [] 改进 log
+- [] 完善 pipeline
+  - [] 完善从 arxiv 下载的 pipeline
+  - [] 完善自动 latex 编译
+  - [] 提供便捷 webui 使用
+  - [] 提供 zotero 插件
+  - [] 提供浏览器插件
