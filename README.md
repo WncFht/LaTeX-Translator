@@ -248,14 +248,14 @@ output/
 
 ## TODO
 
-- [] 写文档
-- [] 写测试
-- [] 添加对 environment / mathenv / verbatim 的更细粒度的支持
-- [] 增加更多后处理
-- [] 改进 log
-- [] 完善 pipeline
-  - [] 完善从 arxiv 下载的 pipeline
-  - [] 完善自动 latex 编译
-  - [] 提供便捷 webui 使用
-  - [] 提供 zotero 插件
-  - [] 提供浏览器插件
+- [ ] 写文档
+- [ ] 写测试
+- [ ] 添加对 environment / mathenv / verbatim 的更细粒度的支持
+- [ ] 增加更多后处理
+- [ ] 改进 log
+- [ ] 完善 pipeline
+  - [ ] 完善从 arxiv 下载的 pipeline
+  - [ ] 完善自动 latex 编译
+  - [ ] 提供便捷 webui 使用
+  - [ ] 提供 zotero 插件
+  - [ ] 提供浏览器插件
