@@ -1,25 +1,83 @@
 {
-  "openai": {
-    "apiKey": "sk-your-api-key",
-    "baseUrl": "https://api.openai.com/v1",
-    "model": "gpt-3.5-turbo",
-    "temperature": 0.3,
-    "timeout": 60000
-  },
   "translation": {
     "defaultTargetLanguage": "简体中文",
     "defaultSourceLanguage": "英文",
+    "saveIntermediateFiles": true,
+    "bypassLLMTranslation": false,
     "maskOptions": {
-      "regularEnvironments": ["figure", "table", "algorithm", "enumerate", "itemize", "tabular", "lstlisting", "verbatim", "Verbatim", "lstinputlisting", "minted", "listings"],
-      "mathEnvironments": ["equation", "align", "gather", "multline", "eqnarray", "matrix", "pmatrix", "bmatrix", "array", "aligned", "cases", "split"],
-      "commands": ["ref", "cite", "eqref", "includegraphics", "url", "label", "textit", "textbf", "texttt", "emph", "href", "caption", "footnote", "item"],
       "maskInlineMath": true,
       "maskDisplayMath": true,
       "maskComments": true,
-      "maskPrefix": "MASK_"
+      "maskPrefix": "MASK_",
+      "regularEnvironments": [
+        "figure", 
+        "table", 
+        "algorithm", 
+        "enumerate", 
+        "itemize", 
+        "tabular", 
+        "lstlisting",
+        "verbatim",
+        "abstract"
+      ],
+      "mathEnvironments": [
+        "equation", 
+        "equation*",
+        "align", 
+        "align*",
+        "gather", 
+        "gather*",
+        "multline", 
+        "multline*",
+        "eqnarray",
+        "displaymath",
+        "subequations",
+        "pmatrix",
+        "bmatrix",
+        "cases",
+        "aligned"
+      ],
+      "maskCommands": [
+        "ref", 
+        "eqref", 
+        "cite", 
+        "label",
+        "includegraphics", 
+        "input", 
+        "include",
+        "footnote",
+        "url",
+        "href",
+        "textbf",
+        "textit",
+        "texttt",
+        "section",
+        "subsection",
+        "subsubsection",
+        "caption"
+      ]
     }
+  },
+  "openai": {
+    "apiKey": "YOUR_OPENAI_API_KEY_HERE",
+    "baseUrl": "https://api.openai.com/v1",
+    "model": "gpt-3.5-turbo",
+    "temperature": 0.3,
+    "timeout": 120000
   },
   "output": {
     "defaultOutputDir": "./output"
+  },
+  "logging": {
+    "console": {
+      "level": "info" 
+    },
+    "file": {
+      "level": "silly", 
+      "path": "./logs/app.log",
+      "size": "10M",
+      "interval": "1d",
+      "compress": "gzip"
+    }
   }
 } 

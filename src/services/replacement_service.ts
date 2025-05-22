@@ -9,6 +9,7 @@
 import { Ast } from 'ast-gen'; // ProjectAST 可能不需要了，因为不处理整个项目
 import type { MaskedNode } from '../types';
 import { toString } from '@unified-latex/unified-latex-util-to-string';
+import log from '../utils/logger'; // 引入日志服务
 
 export class ReplacementService { // 重命名此类
   private maskedNodesMap: Map<string, MaskedNode>;
@@ -34,7 +35,7 @@ export class ReplacementService { // 重命名此类
       const maskedNode = this.maskedNodesMap.get(maskId);
       
       if (!maskedNode) {
-        console.warn(`未找到ID为 ${maskId} 的掩码节点`); // 中文注释
+        log.warn(`未找到ID为 ${maskId} 的掩码节点`); // 中文注释
         return match; // 返回原始匹配（整个 <ph ... /> 标签）
       }
       return this.nodeToLatex(maskedNode.originalContent);
@@ -116,7 +117,7 @@ export class ReplacementService { // 重命名此类
         if (nodeType === 'math.display') return this.displayMathToLatex(node);
         if ('content' in node && Array.isArray(node.content)) return this.nodesToLatex(node.content);
         if ('content' in node && typeof node.content === 'string') return node.content as string;
-        console.warn(`未知节点类型 ${nodeType} 无法转换为LaTeX`); // 中文注释
+        log.debug(`未知节点类型 ${nodeType} 无法转换为LaTeX。节点:`, node);
         return '';
     }
   }
@@ -157,7 +158,7 @@ export class ReplacementService { // 重命名此类
     else if (typeof envAttr === 'object' && envAttr && 'type' in envAttr && envAttr.type === 'string' && 'content' in envAttr) envName = envAttr.content as string;
     
     if (!envName) {
-      console.warn('无法确定环境名称:', node); // 中文注释
+      log.warn('无法确定环境名称:', node);
       return '';
     }
     

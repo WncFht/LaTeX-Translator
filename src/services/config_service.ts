@@ -5,6 +5,7 @@
  */
 import config from 'config';
 import type { OpenAIConfig, MaskingOptions, ConfigMaskOptionsForDefaults } from '../types';
+import log from '../utils/logger'; // 引入日志服务
 
 export class ConfigService {
   private static instance: ConfigService;
@@ -32,7 +33,7 @@ export class ConfigService {
       // If no defaultValue is provided and config.get throws, re-throw.
       // However, the original getConfigOrDefault in cli.ts always had a defaultValue.
       // So, this path might indicate a logic error if defaultValue is not passed when it should be.
-      console.warn(`Configuration for path "${path}" not found and no default value provided.`);
+      log.warn(`Configuration for path "${path}" not found and no default value provided.`);
       throw error; // Or handle more gracefully depending on strictness
     }
   }

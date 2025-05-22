@@ -42,3 +42,5 @@ Thumbs.db
 # 其他生成的文件
 *.log
 *.tsbuildinfo 
+
+./logs/*

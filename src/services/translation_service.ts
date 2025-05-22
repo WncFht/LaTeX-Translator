@@ -11,6 +11,7 @@ import { OpenAI } from 'openai';
 import type { OpenAIConfig } from '../types';
 import { FileService } from './file_service';
 import { ConfigService } from './config_service'; // 引入 ConfigService
+import log from '../utils/logger'; // 引入日志服务
 
 export class TranslationService { // 重命名此类
   private client: OpenAI;
@@ -39,7 +40,7 @@ export class TranslationService { // 重命名此类
     };
 
     if (!this.config.apiKey) {
-      console.warn('OpenAI API 密钥未配置。翻译尝试可能会失败。'); // 中文注释
+      log.warn('OpenAI API 密钥未配置。翻译尝试可能会失败。'); // 中文注释
     }
     
     this.client = new OpenAI({
@@ -80,10 +81,19 @@ export class TranslationService { // 重命名此类
         temperature: this.config.temperature
       });
 
-      const translatedText = response.choices[0]?.message?.content?.trim() || '';
+      let translatedText = response.choices[0]?.message?.content?.trim() || '';
+
+      // 后处理：移除LLM可能添加的包裹标记
+      // 例如，如果返回的是 ```latex\nACTUAL_CONTENT\n``` 或者 ```\nACTUAL_CONTENT\n```
+      const codeBlockRegex = /^\s*`{3}(?:latex)?\s*\n(.*?)\n\s*`{3}\s*$/is;
+      const match = translatedText.match(codeBlockRegex);
+      if (match && match[1]) {
+        translatedText = match[1].trim(); // 获取捕获组内容并去除可能的内部首尾空格
+      }
+
       return translatedText;
     } catch (error) {
-      console.error('翻译请求失败:', error); // 中文注释
+      log.error('翻译请求失败:', error); // 中文注释
       throw error;
     }
   }
@@ -111,19 +121,19 @@ export class TranslationService { // 重命名此类
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       const logEntry = `[${new Date().toISOString()}] 翻译块 ${i+1}/${chunks.length} (${chunk.length} 字符)`; // 中文日志
-      console.log(logEntry);
+      log.info(logEntry);
       logs.push(logEntry);
       try {
         const translatedChunk = await this.translateText(chunk, targetLang, sourceLang);
         translatedChunks.push(translatedChunk);
         const successLog = `[${new Date().toISOString()}] 块 ${i+1} 翻译成功`; // 中文日志
-        console.log(successLog);
+        log.info(successLog);
         logs.push(successLog);
       } catch (error) {
         const errorLog = `[${new Date().toISOString()}] 块 ${i+1} 翻译失败: ${error}`; // 中文日志
-        console.error(errorLog);
+        log.error(errorLog); // 使用 logger.error
         logs.push(errorLog);
-        translatedChunks.push(chunk);
+        translatedChunks.push(chunk); // Fallback to original chunk on error
       }
       if (i < chunks.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 500)); // 避免API速率限制
@@ -149,10 +159,12 @@ export class TranslationService { // 重命名此类
     sourceLang?: string
   ): string {
     let prompt = '';
+    const placeholderInstruction = '请务必完整保留所有XML风格的占位符标签（例如 <ph id="CMD_0001"/>），不要翻译它们或修改它们的任何部分。' // 中文提示
+
     if (sourceLang) {
-      prompt = `将以下${sourceLang}文本翻译成${targetLang}。请保持原始文本的格式，保留所有特殊标记和占位符(以 MASK_ 开头的文本)不变：\n\n${text}`;
+      prompt = `将以下${sourceLang}文本翻译成${targetLang}。${placeholderInstruction}\n\n\`\`\`\n${text}\n\`\`\``;
     } else {
-      prompt = `将以下文本翻译成${targetLang}。请保持原始文本的格式，保留所有特殊标记和占位符(以 MASK_ 开头的文本)不变：\n\n${text}`;
+      prompt = `将以下文本翻译成${targetLang}。${placeholderInstruction}\n\n\`\`\`\n${text}\n\`\`\``;
     }
     return prompt;
   }

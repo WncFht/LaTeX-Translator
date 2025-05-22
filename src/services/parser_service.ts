@@ -14,6 +14,7 @@ import {
   Ast
 } from 'ast-gen';
 import { FileService } from './file_service'; // 路径相对于当前 services 目录
+import log from '../utils/logger'; // 引入日志服务
 
 export class ParserService { // 重命名此类
   private fileService: FileService;
@@ -32,7 +33,7 @@ export class ParserService { // 重命名此类
       const ast = await parseLatexProject(parserOptions);
       return ast;
     } catch (error) {
-      console.error('解析 LaTeX 项目失败:', error); // 中文注释
+      log.error('解析 LaTeX 项目失败:', error); // 中文注释
       throw error;
     }
   }
@@ -41,9 +42,9 @@ export class ParserService { // 重命名此类
     try {
       const jsonString = serializeProjectAstToJson(ast, pretty);
       await this.fileService.writeFile(outputPath, jsonString, 'utf8');
-      console.log(`AST 已保存至: ${outputPath}`); // 中文注释
+      log.debug(`AST 已成功保存至: ${outputPath}`); // 改为 debug 并优化中文
     } catch (error) {
-      console.error('保存 AST 为 JSON 失败:', error); // 中文注释
+      log.error('保存 AST 为 JSON 文件失败:', error); // 优化中文
       throw error;
     }
   }

@@ -43,47 +43,34 @@ npm link
 cp config/default.example.json config/default.json
 ```
 
-2. 根据需要编辑 `config/default.json` 文件:
-```json
-{
-  "openai": {
-    "apiKey": "YOUR_API_KEY_HERE",
-    "baseUrl": "https://api.openai.com/v1",
-    "model": "gpt-3.5-turbo",
-    "temperature": 0.3,
-    "timeout": 60000
-  },
-  "translation": {
-    "defaultTargetLanguage": "简体中文",
-    "defaultSourceLanguage": "英文",
-    "maskOptions": {
-      "environments": ["equation", "align", "figure", "table"],
-      "commands": ["ref", "cite", "includegraphics", "url"],
-      "maskInlineMath": true,
-      "maskDisplayMath": true,
-      "maskComments": false,
-      "maskPrefix": "MASK_"
-    }
-  },
-  "output": {
-    "defaultOutputDir": "./output"
-  }
-}
-```
+2. 根据需要编辑 `config/default.json` 文件。关键配置项包括：
+   * **OpenAI API 设置**: `openai.apiKey`, `openai.baseUrl`, `openai.model`, `openai.temperature`, `openai.timeout`.
+   * **翻译选项**: 
+     * `translation.defaultTargetLanguage`: 默认目标语言 (例如 "简体中文")。
+     * `translation.defaultSourceLanguage`: 默认源语言 (例如 "英文", 可为 `null` 表示自动检测或不指定)。
+     * `translation.saveIntermediateFiles`: 是否保存中间文件 (AST, 掩码文本等)，`true` 或 `false`。
+     * `translation.bypassLLMTranslation`: 是否跳过实际的LLM翻译调用，直接使用掩码文本作为翻译结果 (用于调试)，`true` 或 `false` (默认为 `false`)。
+     * `translation.maskOptions`: 定义掩码行为的详细配置 (见下文)。
+   * **输出设置**: `output.defaultOutputDir`: 默认输出目录。
+   * **日志设置**: 
+     * `logging.level`: 设置日志输出级别。可选值包括：`"silly"` (0), `"trace"` (1), `"debug"` (2), `"info"` (3), `"warn"` (4), `"error"` (5), `"fatal"` (6)。默认为 `"info"`。
+
+3. **掩码选项 (`translation.maskOptions`)**: 
+   * `maskInlineMath`: (布尔型) 是否掩码行内数学 `$ ... $`。
+   * `maskDisplayMath`: (布尔型) 是否掩码块级数学 `\\[ ... \\]` 及 `mathEnvironments` 中定义的环境。
+   * `maskComments`: (布尔型) 是否掩码 LaTeX 注释。
+   * `regularEnvironments`: (字符串数组) 需要完整掩码的普通环境列表，例如 `["figure", "table"]`。
+   * `mathEnvironments`: (字符串数组) 被视为数学环境并受 `maskDisplayMath` 控制的环境列表。
+   * `maskCommands`: (字符串数组) 需要完整掩码的命令列表，例如 `["ref", "includegraphics"]`。
 
 ### 环境特定配置
 
-您可以为不同环境创建不同的配置文件，如:
-- `config/development.json`
-- `config/production.json`
-- `config/test.json`
-
-使用环境变量 `NODE_ENV` 指定当前环境:
-```bash
-NODE_ENV=production node dist/cli.js translate ...
-```
+您可以为不同环境创建不同的配置文件，如 `development.json`, `production.json`。使用环境变量 `NODE_ENV` 指定当前环境 (例如 `NODE_ENV=production node dist/cli.js ...`)。
 
 ## 命令行用法
+
+通用选项（可用于 `parse` 和 `translate` 命令）：
+- `-L, --log-level <level>`: 设置日志输出级别。会覆盖配置文件中的设置。可选值: `silly`(0), `trace`(1), `debug`(2), `info`(3), `warn`(4), `error`(5), `fatal`(6)。
 
 ### 解析命令
 
@@ -123,25 +110,27 @@ latex-translator translate <输入路径> [选项]
 
 - `<输入路径>`: LaTeX文件或项目目录的路径
 
-#### 选项
+#### 选项 (翻译特定)
 
-- `--api-key <密钥>`: OpenAI API密钥 (可选，使用配置文件中的值)
-- `--base-url <URL>`: OpenAI API基础URL (可选，使用配置文件中的值)
-- `--model <模型名称>`: OpenAI模型 (可选，使用配置文件中的值)
-- `--target-lang <语言>`: 目标语言 (可选，使用配置文件中的值)
-- `--source-lang <语言>`: 源语言 (可选)
-- `-o, --output-dir <目录>`: 输出基础目录 (可选，使用配置文件中的值)
-- `--temp, --temperature <数值>`: 模型温度参数 (0-1) (可选，使用配置文件中的值)
-- `--mask-env <环境>`: 要掩码的环境，用逗号分隔 (可选，使用配置文件中的值)
-- `--mask-cmd <命令>`: 要掩码的命令，用逗号分隔 (可选，使用配置文件中的值)
-- `--no-mask-math`: 不掩码数学公式 (可选，使用配置文件中的值)
-- `-h, --help`: 显示帮助信息
+- `--api-key <密钥>`: OpenAI API密钥。
+- `--base-url <URL>`: OpenAI API基础URL。
+- `--model <模型名称>`: OpenAI模型。
+- `--target-lang <语言>`: 目标语言。
+- `--source-lang <语言>`: 源语言 (可选)。
+- `-o, --output-dir <目录>`: 输出基础目录。
+- `--temp, --temperature <数值>`: 模型温度参数 (0-1)。
+- `--mask-env <环境>`: 要掩码的普通环境，用逗号分隔 (例如 `"figure,table"`)。
+- `--mask-math-env <环境>`: 要掩码的数学环境，用逗号分隔。
+- `--mask-cmd <命令>`: 要掩码的命令，用逗号分隔 (例如 `"ref,cite"`)。
+- `--no-mask-math`: 不掩码数学公式 (行内和块级)。
+- `--bypass-llm`: 跳过实际的LLM翻译，直接使用掩码文本 (用于调试)。
+- `-h, --help`: 显示帮助信息。
 
 #### 示例
 
 ```bash
-# 使用配置文件中的设置翻译LaTeX文件
-latex-translator translate ./document.tex
+# 使用配置文件翻译，并将日志级别设为debug
+latex-translator translate ./document.tex -L debug
 
 # 指定自定义设置覆盖配置文件中的值
 latex-translator translate ./document.tex \

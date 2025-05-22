@@ -13,13 +13,31 @@ import { ParserService } from './services/parser_service';
 import { LatexTranslatorService } from './services/latex-translator_service'; // 更新导入
 import type { TranslatorOptions } from './types'; // OpenAIConfig, MaskingOptions 不再直接被CLI使用
 import { ConfigService } from './services/config_service';
+import log from './utils/logger'; // 引入日志服务
 
 // 主函数
 async function main() {
   const configService = ConfigService.getInstance(); // Get instance of ConfigService
 
-  await yargs(hideBin(process.argv))
+  const argv = await yargs(hideBin(process.argv))
     .usage('用法: $0 <命令> [参数]')
+    .option('log-level', {
+      alias: 'L',
+      describe: '设置日志输出级别 (silly, trace, debug, info, warn, error, fatal)',
+      type: 'string',
+      // default: undefined, // 默认值将由logger.ts中的ConfigService读取逻辑处理
+      coerce: (arg: string) => { // 验证并转换日志级别
+        const validLevels = ["silly", "trace", "debug", "info", "warn", "error", "fatal"];
+        const numericLevel = parseInt(arg, 10);
+        if (validLevels.includes(arg.toLowerCase())) {
+          return arg.toLowerCase();
+        } else if (!isNaN(numericLevel) && numericLevel >= 0 && numericLevel <=6) {
+          return validLevels[numericLevel]; // 将数字转换为字符串名称
+        }
+        log.warn(`无效的日志级别参数: "${arg}". 将使用配置文件中的设置或默认设置。`);
+        return undefined; // 返回undefined，以便后续逻辑可以使用默认值
+      }
+    })
     .command('parse <inputPath>', '解析LaTeX文件或项目为AST', (yargs) => {
       return yargs
         .positional('inputPath', {
@@ -122,6 +140,12 @@ async function main() {
           type: 'boolean',
           default: !configService.getDefaultTranslatorOptions().maskingOptions.maskInlineMath, 
           defaultDescription: '配置文件中的值'
+        })
+        .option('bypass-llm', { // 新增 bypass-llm 选项
+          describe: '跳过LLM翻译，直接使用掩码文本 (用于调试)',
+          type: 'boolean',
+          // 默认值将由 TranslatorOptions 内部或 ConfigService 处理，这里不设置，以便区分用户是否明确传入
+          defaultDescription: '配置文件中的值 (translation.bypassLLMTranslation)'
         });
     }, async (argv) => {
       await handleTranslateCommand(argv);
@@ -139,7 +163,24 @@ async function main() {
       log/            - 包含中间过程文件和日志的目录
 `)
     .wrap(yargs.terminalWidth())
-    .parse();
+    .parseAsync(); // 使用 parseAsync 来获取 argv
+
+  // 在命令处理前，根据命令行参数更新日志级别
+  if (argv.logLevel) {
+    const logLevelMap: { [key: string]: number } = {
+      silly: 0, trace: 1, debug: 2, info: 3, warn: 4, error: 5, fatal: 6,
+    };
+    const newMinLevel = logLevelMap[argv.logLevel as string];
+    if (newMinLevel !== undefined) {
+      log.settings.minLevel = newMinLevel;
+      log.debug(`通过命令行参数将日志级别设置为: ${argv.logLevel} (级别代码: ${newMinLevel})`);
+    }
+  }
+
+  // 原来的命令分发逻辑会基于 argv 执行
+  // yargs 在这里已经处理了命令的执行，我们不需要再次手动调用 handleParseCommand 或 handleTranslateCommand
+  // 如果命令没有被 yargs 正确路由和执行，这里的结构可能需要调整
+  // 但通常 yargs(hideBin(process.argv)).command(...).parse() 会处理命令执行
 }
 
 /**
@@ -147,6 +188,7 @@ async function main() {
  * @param argv 命令行参数
  */
 async function handleParseCommand(argv: any): Promise<void> {
+  // argv 中现在也包含了 logLevel (如果被设置)
   const inputPath = argv.inputPath as string;
   const outputPath = path.resolve(argv.output as string);
   const parser = new ParserService(); // 实例化 ParserService
@@ -156,10 +198,10 @@ async function handleParseCommand(argv: any): Promise<void> {
       macrosFile: argv.macros as string | undefined,
       loadDefaultMacros: !(argv['no-default-macros'] as boolean)
     });
-    console.log(`AST已保存到: ${outputPath}`);
-    console.log('处理完成！');
+    log.debug(`AST已成功保存到: ${outputPath}`);
+    log.info('解析处理完成！');
   } catch (error) {
-    console.error('处理过程中出错:', error);
+    log.error('解析处理过程中发生错误:', error);
     process.exit(1);
   }
 }
@@ -183,7 +225,9 @@ async function handleTranslateCommand(argv: any): Promise<void> {
       outputDir: argv['output-dir'] as string,
       // maskingOptions 将由用户命令行参数或 ConfigService 的默认值（在 LatexTranslatorService 内部处理）提供
       // 这里仅传递用户显式设置的掩码选项
-      maskingOptions: {}
+      maskingOptions: {},
+      // 如果命令行中指定了 bypassLLMTranslation，则使用它的值
+      bypassLLMTranslation: argv['bypass-llm'] as boolean | undefined 
     };
 
     if (argv['mask-env']) {
@@ -208,19 +252,19 @@ async function handleTranslateCommand(argv: any): Promise<void> {
     const translator = new LatexTranslatorService(translatorOptions); // 实例化新的 Service
     const outputPath = await translator.translate(argv.inputPath as string);
     
-    console.log('\n翻译完成！');
-    console.log(`项目根目录: ${path.dirname(outputPath)}`);
-    console.log(`翻译后文件: ${outputPath}`);
-    console.log('你可以在翻译后的目录中直接编译LaTeX文件');
+    log.info('\n翻译完成！');
+    log.info(`项目根目录: ${path.dirname(outputPath)}`);
+    log.info(`翻译后文件: ${outputPath}`);
+    log.info('你可以在翻译后的目录中直接编译LaTeX文件');
     
   } catch (error) {
-    console.error('翻译过程中出错:', error);
+    log.error('翻译过程中出错:', error);
     process.exit(1);
   }
 }
 
 // 执行主函数
 main().catch(error => {
-  console.error('未处理的错误:', error);
+  log.error('未处理的错误:', error);
   process.exit(1);
 }); 

@@ -13,6 +13,7 @@ import type {
 } from 'ast-gen';
 import type { MaskingOptions, MaskedNode } from '../types';
 import { toString } from '@unified-latex/unified-latex-util-to-string'; // 假设可以这样导入
+import log from '../utils/logger'; // 引入日志服务
 
 export class MaskingService { // 重命名此类
   private options: Required<MaskingOptions>;
@@ -155,7 +156,7 @@ export class MaskingService { // 重命名此类
     else if (typeof envAttr === 'object' && envAttr && 'type' in envAttr && envAttr.type === 'string' && 'content' in envAttr) envName = envAttr.content as string;
     
     if (!envName) {
-      console.warn('无法确定环境名称:', node);
+      log.warn('无法确定环境名称:', node);
       return ''; // 或者返回原始内容的字符串表示?
     }
 

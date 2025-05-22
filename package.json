@@ -27,7 +27,9 @@
     "axios": "^1.6.0",
     "config": "^4.0.0",
     "openai": "^4.100.0",
-    "yargs": "^17.7.2"
+    "yargs": "^17.7.2",
+    "tslog": "^4.9.3",
+    "rotating-file-stream": "^3.2.1"
   },
   "devDependencies": {
     "@types/config": "^3.3.5",
